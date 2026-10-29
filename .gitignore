@@ -49,3 +49,16 @@ __pycache__/
 
 
 /train_ai/checkpoints
+
+# --- ACR Telemetry（本地环境 / 构建产物 / 数据，不进仓库）---
+.build_venv/
+.spike_venv/
+build_check/
+build_exe/
+*.onefile-build/
+qt_min_build/
+dist/
+telemetry/
+.acr_cache/
+DT_Pacenote*.dat
+rust/target/
