@@ -148,7 +148,8 @@ class _DecodeThread(QThread):
         try:
             self.out.write(pcm.tobytes())
         except Exception as exc:  # noqa: BLE001
-            self.failed.emit(f"音频输出失败：{type(exc).__name__}")
+            self.failed.emit(tr("音频输出失败：{error}").format(
+                error=type(exc).__name__))
             return False
         end = float((frame.pts + frame.samples) * frame.time_base)
         self.playhead = max(self.playhead, end)
@@ -194,14 +195,14 @@ class VideoPlayer(QObject):
         try:
             container = av.open(str(path))
         except Exception:  # noqa: BLE001
-            self.error.emit("打不开这个录像文件")
+            self.error.emit(tr("打不开这个录像文件"))
             return False
         try:
             vstream = container.streams.video[0]
             vstream.thread_type = "AUTO"
         except IndexError:
             container.close()
-            self.error.emit("录像里没有画面")
+            self.error.emit(tr("录像里没有画面"))
             return False
         try:
             astream = container.streams.audio[0]

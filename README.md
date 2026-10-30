@@ -12,6 +12,7 @@ Assetto Corsa Rally（UE5）的遥测分析与回放桌面客户端：赛段跑�
 - **赛道地图**：由世界系速度积分重建（`∫vx`、`−∫vz`，纵向恒定比例，缩小裁切不压扁），按每 100m 局部 delta 着色，可点击定位。
 - **内置录像**：Windows Graphics Capture + WASAPI 环回 + NVENC 硬件编码（1080p60，约 1MB/s），与遥测同时间轴，回放时光标/地图跟随。
 - **加载缓存**：按文件签名缓存每个 run 的解析结果，20 个 run、1.3GB CSV 冷启动约 50s，之后热启动 0.5s 级，新赛段只解析新增文件。
+- **界面语言**：中文 / English 可切换（右上角下拉，保存后重启生效；`--lang en` 可直接以英文启动）。
 
 ## 数据来源
 
@@ -48,6 +49,7 @@ Nuitka 的 `--enable-plugin=pyside6` 与 QtOpenGL/QtSvg 的 include 已固化在
 
 ```bash
 "ACR Telemetry.exe" --screenshot out.png --current 0 --telemetry-dir dist/telemetry
+"ACR Telemetry.exe" --screenshot out.png --lang en                 # 英文界面
 "ACR Telemetry.exe" --record-test 3 --record-window "Assetto Corsa Rally"   # 验证窗口捕获+编码+音频
 ```
 

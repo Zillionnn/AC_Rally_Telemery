@@ -56,10 +56,15 @@ from PySide6.QtWidgets import (
 )
 
 import acr_data
+import acr_i18n
 import acr_pacenotes
 import acr_play
 import acr_track
+from acr_i18n import tr
 from acr_live import AutoRecorder
+
+
+_LANG_OVERRIDE = None
 
 
 C = {
@@ -396,7 +401,7 @@ class ChartResizeHandle(QFrame):
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setFixedHeight(8)
         self.setCursor(Qt.CursorShape.SizeVerCursor)
-        self.setToolTip("拖动调整上方图表高度")
+        self.setToolTip(tr("拖动调整上方图表高度"))
 
     def paintEvent(self, event) -> None:
         super().paintEvent(event)
@@ -644,7 +649,7 @@ class TrackMap(pg.PlotWidget):
     def set_path(self, path: acr_track.TrackPath | None) -> None:
         self.hint.hide()
         if path is None:
-            self.show_message("此 run 无赛道数据")
+            self.show_message(tr("此 run 无赛道数据"))
             return
         self.path = path
         self._angle = None
@@ -728,6 +733,10 @@ class TelemetryWindow(QMainWindow):
     ):
         super().__init__()
         self.directory = Path(directory)
+        if _LANG_OVERRIDE:
+            acr_i18n.set_language(_LANG_OVERRIDE)
+        else:
+            acr_i18n.set_language(str(self._load_ui_state().get("language", "zh")))
         self.runs = []
         self.current = None
         self.reference = None
@@ -828,7 +837,7 @@ class TelemetryWindow(QMainWindow):
         else:
             self.auto_check.setChecked(False)
             self.auto_check.setEnabled(False)
-            self._set_live("preview", "预览模式 · 自动录制未启动")
+            self._set_live("preview", tr("预览模式 · 自动录制未启动"))
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
@@ -881,7 +890,7 @@ class TelemetryWindow(QMainWindow):
         root.addWidget(split, 1)
 
         self.status = self.statusBar()
-        self.status.showMessage("正在等待遥测数据…")
+        self.status.showMessage(tr("正在等待遥测数据…"))
 
     def _build_header(self) -> QFrame:
         frame = QFrame()
@@ -902,33 +911,42 @@ class TelemetryWindow(QMainWindow):
         layout.addLayout(titles)
         layout.addStretch(1)
 
-        layout.addWidget(self._selector_label("当前"))
+        layout.addWidget(self._selector_label(tr("当前")))
         self.current_combo = QComboBox()
         self.current_combo.setMinimumWidth(200)
         self.current_combo.currentIndexChanged.connect(self._on_selection_changed)
         layout.addWidget(self.current_combo)
 
         layout.addSpacing(6)
-        layout.addWidget(self._selector_label("参考"))
+        layout.addWidget(self._selector_label(tr("参考")))
         self.reference_combo = QComboBox()
         self.reference_combo.setMinimumWidth(200)
         self.reference_combo.currentIndexChanged.connect(self._on_selection_changed)
         layout.addWidget(self.reference_combo)
 
-        self.refresh_btn = QPushButton("刷新")
+        self.refresh_btn = QPushButton(tr("刷新"))
         self.refresh_btn.clicked.connect(self.start_loader)
         layout.addWidget(self.refresh_btn)
-        self.reset_btn = QPushButton("重置缩放")
+        self.reset_btn = QPushButton(tr("重置缩放"))
         self.reset_btn.clicked.connect(self.reset_zoom)
         layout.addWidget(self.reset_btn)
-        self.reset_chart_btn = QPushButton("重置图高")
+        self.reset_chart_btn = QPushButton(tr("重置图高"))
         self.reset_chart_btn.clicked.connect(self._on_reset_chart_heights)
         layout.addWidget(self.reset_chart_btn)
-        self.replay_panel_toggle = QPushButton("回放面板")
+        self.replay_panel_toggle = QPushButton(tr("回放面板"))
         self.replay_panel_toggle.setCheckable(True)
         self.replay_panel_toggle.setChecked(True)
         self.replay_panel_toggle.clicked.connect(self._on_toggle_replay_panel)
         layout.addWidget(self.replay_panel_toggle)
+
+        self.lang_combo = QComboBox()
+        for code, name in acr_i18n.LANGUAGES.items():
+            self.lang_combo.addItem(name, code)
+        self.lang_combo.setCurrentIndex(
+            max(0, self.lang_combo.findData(acr_i18n.language())))
+        self.lang_combo.setToolTip(tr("语言 · 重启后生效"))
+        self.lang_combo.currentIndexChanged.connect(self._on_language_changed)
+        layout.addWidget(self.lang_combo)
         return frame
 
     def _selector_label(self, text: str) -> QLabel:
@@ -946,27 +964,27 @@ class TelemetryWindow(QMainWindow):
         self.live_dot.setObjectName("liveDot")
         self.live_state = QLabel("WAITING")
         self.live_state.setObjectName("liveState")
-        self.live_detail = QLabel("等待 AC Rally …")
+        self.live_detail = QLabel(tr("等待 AC Rally …"))
         self.live_detail.setObjectName("liveDetail")
         layout.addWidget(self.live_dot)
         layout.addWidget(self.live_state)
         layout.addWidget(self.live_detail)
         layout.addStretch(1)
-        self.auto_check = QCheckBox("自动录制")
+        self.auto_check = QCheckBox(tr("自动录制"))
         self.auto_check.setChecked(True)
         self.auto_check.stateChanged.connect(self._on_auto_toggle)
         layout.addWidget(self.auto_check)
-        self.video_check = QCheckBox("自动录像")
+        self.video_check = QCheckBox(tr("自动录像"))
         self.video_check.setChecked(True)
         self.video_check.setToolTip(
-            "跑赛段时同步录制画面+系统声音到 telemetry/videos，\n"
-            "与遥测一一对应；赛段重置的片段会自动删除"
+            tr("跑赛段时同步录制画面+系统声音到 telemetry/videos，\n"
+               "与遥测一一对应；赛段重置的片段会自动删除")
         )
         self.video_check.stateChanged.connect(self._on_video_toggle)
         layout.addWidget(self.video_check)
         self.video_info = QLabel("")
         self.video_info.setObjectName("videoInfo")
-        self.video_info.setToolTip("点击打开录像目录")
+        self.video_info.setToolTip(tr("点击打开录像目录"))
         self.video_info.mousePressEvent = lambda _e: self._open_video_folder()
         layout.addWidget(self.video_info)
         return frame
@@ -978,15 +996,15 @@ class TelemetryWindow(QMainWindow):
         layout.setContentsMargins(18, 6, 18, 6)
         layout.setSpacing(26)
         fields = (
-            ("distance", "距离", "m"),
-            ("time", "时间", ""),
-            ("speed", "速度", "km/h"),
-            ("gas", "油门", "%"),
-            ("brake", "刹车", "%"),
-            ("gear", "挡位", ""),
-            ("delta", "Δ 参考", "s"),
-            ("ref_speed", "参考速度", "km/h"),
-            ("pacenote", "路书", ""),
+            ("distance", tr("距离"), "m"),
+            ("time", tr("时间"), ""),
+            ("speed", tr("速度"), "km/h"),
+            ("gas", tr("油门"), "%"),
+            ("brake", tr("刹车"), "%"),
+            ("gear", tr("挡位"), ""),
+            ("delta", tr("Δ 参考"), "s"),
+            ("ref_speed", tr("参考速度"), "km/h"),
+            ("pacenote", tr("路书"), ""),
         )
         for key, caption, unit in fields:
             box = QVBoxLayout()
@@ -1019,26 +1037,26 @@ class TelemetryWindow(QMainWindow):
         title.setObjectName("cardTitle")
         head.addWidget(title)
         head.addStretch(1)
-        self.replay_state = QLabel("无录像")
+        self.replay_state = QLabel(tr("无录像"))
         self.replay_state.setObjectName("cardHint")
         head.addWidget(self.replay_state)
         layout.addLayout(head)
 
         target_row = QHBoxLayout()
         target_row.setSpacing(6)
-        target_label = QLabel("录像窗口")
+        target_label = QLabel(tr("录像窗口"))
         target_label.setObjectName("cardHint")
         target_row.addWidget(target_label)
         self.video_target_combo = QComboBox()
         self.video_target_combo.setToolTip(
-            "自动匹配会找 AC Rally 窗口；如果游戏窗口名不含这些字，\n"
-            "从列表里选它。列表按打开面板时刷新。"
+            tr("自动匹配会找 AC Rally 窗口；如果游戏窗口名不含这些字，\n"
+               "从列表里选它。列表按打开面板时刷新。")
         )
         self.video_target_combo.currentIndexChanged.connect(
             self._on_video_target_changed
         )
         target_row.addWidget(self.video_target_combo, 1)
-        refresh_target = QPushButton("刷新")
+        refresh_target = QPushButton(tr("刷新"))
         refresh_target.clicked.connect(self._populate_video_targets)
         target_row.addWidget(refresh_target)
         layout.addLayout(target_row)
@@ -1050,53 +1068,53 @@ class TelemetryWindow(QMainWindow):
         self.video_view.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
         )
-        self.video_view.setText("尚无录像\n开启自动录像后按赛段生成")
+        self.video_view.setText(tr("尚无录像\n开启自动录像后按赛段生成"))
         layout.addWidget(self.video_view, 2)
 
         transport = QHBoxLayout()
         transport.setSpacing(4)
-        self.play_btn = QPushButton("播放")
+        self.play_btn = QPushButton(tr("播放"))
         self.play_btn.clicked.connect(self._on_play_toggle)
         transport.addWidget(self.play_btn)
         back_btn = QPushButton("−3s")
-        back_btn.setToolTip("后退 3 秒")
+        back_btn.setToolTip(tr("后退 3 秒"))
         back_btn.clicked.connect(lambda: self._nudge_video(-3.0))
         transport.addWidget(back_btn)
         fwd_btn = QPushButton("+3s")
-        fwd_btn.setToolTip("前进 3 秒")
+        fwd_btn.setToolTip(tr("前进 3 秒"))
         fwd_btn.clicked.connect(lambda: self._nudge_video(3.0))
         transport.addWidget(fwd_btn)
         self.video_time = QLabel("0:00.0 / —")
         self.video_time.setObjectName("cardHint")
         transport.addWidget(self.video_time)
         transport.addStretch(1)
-        self.video_follow = QCheckBox("跟随")
-        self.video_follow.setToolTip("播放时图表光标和地图跟着视频走")
+        self.video_follow = QCheckBox(tr("跟随"))
+        self.video_follow.setToolTip(tr("播放时图表光标和地图跟着视频走"))
         self.video_follow.setChecked(True)
         transport.addWidget(self.video_follow)
         layout.addLayout(transport)
 
         levels = QHBoxLayout()
         levels.setSpacing(4)
-        mute_btn = QPushButton("静音")
+        mute_btn = QPushButton(tr("静音"))
         mute_btn.setCheckable(True)
         mute_btn.toggled.connect(self._on_mute_toggled)
         levels.addWidget(mute_btn)
         self.volume_slider = QSlider(Qt.Orientation.Horizontal)
         self.volume_slider.setRange(0, 100)
         self.volume_slider.setValue(80)
-        self.volume_slider.setToolTip("音量")
+        self.volume_slider.setToolTip(tr("音量"))
         self.volume_slider.valueChanged.connect(self._on_volume_changed)
         levels.addWidget(self.volume_slider, 1)
-        self.video_align = QPushButton("对齐到光标")
+        self.video_align = QPushButton(tr("对齐到光标"))
         self.video_align.setToolTip(
-            "把视频当前位置标成图表光标所在的赛段时刻。\n"
-            "手动导入的录像用这个对齐一次即可。"
+            tr("把视频当前位置标成图表光标所在的赛段时刻。\n"
+               "手动导入的录像用这个对齐一次即可。")
         )
         self.video_align.clicked.connect(self._on_align_video)
         levels.addWidget(self.video_align)
-        open_btn = QPushButton("打开…")
-        open_btn.setToolTip("导入外部录像文件（录屏软件拍的也能用）")
+        open_btn = QPushButton(tr("打开…"))
+        open_btn.setToolTip(tr("导入外部录像文件（录屏软件拍的也能用）"))
         open_btn.clicked.connect(self._on_open_external_video)
         levels.addWidget(open_btn)
         self.quality_combo = QComboBox()
@@ -1106,21 +1124,21 @@ class TelemetryWindow(QMainWindow):
             ("1440p", 2560, 1440, 14.0),
         ):
             self.quality_combo.addItem(
-                f"画质 {label}",
+                tr("画质 {label}").format(label=label),
                 {"width": width, "height": height, "bitrate_mbps": bitrate},
             )
-        self.quality_combo.setToolTip("录像分辨率与码率（下一段赛段生效）")
+        self.quality_combo.setToolTip(tr("录像分辨率与码率（下一段赛段生效）"))
         self.quality_combo.currentIndexChanged.connect(self._on_quality_changed)
         levels.addWidget(self.quality_combo)
         layout.addLayout(levels)
 
         map_head = QHBoxLayout()
         map_head.setSpacing(6)
-        map_title = QLabel("赛道地图")
+        map_title = QLabel(tr("赛道地图"))
         map_title.setObjectName("cardSubTitle")
         map_head.addWidget(map_title)
         map_head.addStretch(1)
-        self.map_hint = QLabel("红=比参考慢 绿=更快 · 每100m")
+        self.map_hint = QLabel(tr("红=比参考慢 绿=更快 · 每100m"))
         self.map_hint.setObjectName("cardHint")
         map_head.addWidget(self.map_hint)
         layout.addLayout(map_head)
@@ -1169,6 +1187,13 @@ class TelemetryWindow(QMainWindow):
             self._resize_panel(self._panel_width())
         self._save_ui_state()
 
+    def _on_language_changed(self, _index: int) -> None:
+        code = self.lang_combo.currentData()
+        if not code:
+            return
+        self._save_ui_state({"language": str(code)})
+        self.status.showMessage(tr("语言已保存 · 重启客户端后生效"))
+
     def _load_ui_state(self) -> dict:
         if not hasattr(self, "_ui_state"):
             try:
@@ -1206,7 +1231,7 @@ class TelemetryWindow(QMainWindow):
             return
         run = self.current
         if run is None:
-            self.track_map.show_message("没有数据")
+            self.track_map.show_message(tr("没有数据"))
             return
         path = getattr(self, "_map_path", None)
         if getattr(self, "_map_run_id", None) != run.id:
@@ -1214,10 +1239,10 @@ class TelemetryWindow(QMainWindow):
             self._map_path = path
             self._map_run_id = run.id
         if path is None:
-            self.track_map.show_message("此 run 无赛道数据")
-            self.map_hint.setText("需要 velocity 列")
+            self.track_map.show_message(tr("此 run 无赛道数据"))
+            self.map_hint.setText(tr("需要 velocity 列"))
             return
-        self.map_hint.setText("红=比参考慢 绿=更快 · 每100m")
+        self.map_hint.setText(tr("红=比参考慢 绿=更快 · 每100m"))
         self.track_map.set_path(path)
         compare = self.compare or {}
         self.track_map.set_delta(compare.get("distance"), compare.get("delta"))
@@ -1298,14 +1323,14 @@ class TelemetryWindow(QMainWindow):
         self.delta_label = QLabel("—")
         self.delta_label.setObjectName("delta")
         layout.addWidget(self.delta_label)
-        self.ref_label = QLabel("等待数据…")
+        self.ref_label = QLabel(tr("等待数据…"))
         self.ref_label.setObjectName("muted")
         self.ref_label.setWordWrap(True)
         layout.addWidget(self.ref_label)
 
         track_row = QHBoxLayout()
         track_row.setSpacing(8)
-        track_caption = QLabel("赛道")
+        track_caption = QLabel(tr("赛道"))
         track_caption.setObjectName("statCaption")
         track_caption.setAlignment(
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop
@@ -1328,14 +1353,14 @@ class TelemetryWindow(QMainWindow):
         grid.setHorizontalSpacing(8)
         grid.setVerticalSpacing(8)
         stats = (
-            ("distance", "距离 km"),
-            ("avg", "平均 km/h"),
-            ("max", "最高 km/h"),
-            ("full", "全油 %"),
-            ("brake", "刹车 %"),
-            ("coast", "滑行 %"),
-            ("stationary", "静止 s"),
-            ("incidents", "事件"),
+            ("distance", tr("距离 km")),
+            ("avg", tr("平均 km/h")),
+            ("max", tr("最高 km/h")),
+            ("full", tr("全油 %")),
+            ("brake", tr("刹车 %")),
+            ("coast", tr("滑行 %")),
+            ("stationary", tr("静止 s")),
+            ("incidents", tr("事件")),
         )
         for i, (key, caption) in enumerate(stats):
             box = QFrame()
@@ -1366,16 +1391,16 @@ class TelemetryWindow(QMainWindow):
         layout.addWidget(title)
 
         top = QHBoxLayout()
-        self.theoretical_label = QLabel("理论最佳  —")
+        self.theoretical_label = QLabel(tr("理论最佳  —"))
         self.theoretical_label.setObjectName("muted")
         top.addWidget(self.theoretical_label)
         top.addStretch(1)
-        self.potential_label = QLabel("可提升  —")
+        self.potential_label = QLabel(tr("可提升  —"))
         self.potential_label.setObjectName("delta")
         top.addWidget(self.potential_label)
         layout.addLayout(top)
 
-        self.analysis_note = QLabel("100m 分段 · 已剔除参考事件区")
+        self.analysis_note = QLabel(tr("100m 分段 · 已剔除参考事件区"))
         self.analysis_note.setObjectName("muted")
         self.analysis_note.setWordWrap(True)
         layout.addWidget(self.analysis_note)
@@ -1397,7 +1422,7 @@ class TelemetryWindow(QMainWindow):
         brake_layout = QVBoxLayout(brake_wrap)
         brake_layout.setContentsMargins(0, 4, 0, 0)
         brake_layout.setSpacing(2)
-        brake_note = QLabel("刹车/弯区 · 入 / 弯心 / 出 · 当前 / 参考")
+        brake_note = QLabel(tr("刹车/弯区 · 入 / 弯心 / 出 · 当前 / 参考"))
         brake_note.setObjectName("muted")
         brake_layout.addWidget(brake_note)
         self.brake_list = QListWidget()
@@ -1409,7 +1434,7 @@ class TelemetryWindow(QMainWindow):
         split_layout = QVBoxLayout(split_wrap)
         split_layout.setContentsMargins(0, 4, 0, 0)
         self.splits_table = QTableWidget(0, 4)
-        self.splits_table.setHorizontalHeaderLabels(["距离", "参考", "当前", "Δ"])
+        self.splits_table.setHorizontalHeaderLabels([tr("距离"), tr("参考"), tr("当前"), "Δ"])
         self.splits_table.verticalHeader().setVisible(False)
         self.splits_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.splits_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -1429,7 +1454,7 @@ class TelemetryWindow(QMainWindow):
         pace_layout.setSpacing(4)
         pace_top = QHBoxLayout()
         pace_top.setSpacing(6)
-        pace_top.addWidget(self._selector_label("赛段"))
+        pace_top.addWidget(self._selector_label(tr("赛段")))
         self.pace_combo = QComboBox()
         self.pace_combo.currentIndexChanged.connect(self._on_pace_stage_changed)
         self.pace_combo.setEnabled(bool(self.pacenote_book.stages))
@@ -1451,7 +1476,7 @@ class TelemetryWindow(QMainWindow):
     def _fill_pace_combo(self) -> None:
         self.pace_combo.blockSignals(True)
         self.pace_combo.clear()
-        self.pace_combo.addItem("自动匹配", None)
+        self.pace_combo.addItem(tr("自动匹配"), None)
         for key in sorted(self.pacenote_book.stages, key=acr_pacenotes.display_name):
             self.pace_combo.addItem(acr_pacenotes.display_name(key), key)
         self.pace_combo.blockSignals(False)
@@ -1484,13 +1509,14 @@ class TelemetryWindow(QMainWindow):
                 f"<span style='color:{C['blue']};font-weight:600'>"
                 f"{html_escape(raw)}</span>"
                 f" <span style='color:{C['muted']};font-weight:400'>"
-                f"· 游戏数据</span>"
+                f"{tr('· 游戏数据')}</span>"
             )
-            tips.append(f"游戏赛道：{raw}")
+            tips.append(tr("游戏赛道：{track}").format(track=raw))
         if stage is not None:
-            source = "自动匹配" if raw else "按路书距离"
+            source = tr("自动匹配") if raw else tr("按路书距离")
             prefix = (
-                f"<span style='color:{C['muted']};font-weight:400'>路书</span> "
+                f"<span style='color:{C['muted']};font-weight:400'>"
+                f"{tr('路书')}</span> "
                 if raw
                 else ""
             )
@@ -1500,7 +1526,8 @@ class TelemetryWindow(QMainWindow):
                 f" <span style='color:{C['muted']};font-weight:400'>"
                 f"· {source}</span>"
             )
-            tips.append(f"路书表：{stage.label}（{source}）")
+            tips.append(tr("路书表：{table}（{source}）").format(
+                table=stage.label, source=source))
         if not lines:
             self.track_label.setText("—")
             self.track_label.setToolTip("")
@@ -1518,12 +1545,13 @@ class TelemetryWindow(QMainWindow):
         self._update_track_label(None)
         if self.pacenote_book.error:
             self.setWindowTitle("ACR Telemetry Studio")
-            self.pace_note.setText(f"路书加载失败：{self.pacenote_book.error}")
+            self.pace_note.setText(tr("路书加载失败：{error}").format(
+                error=self.pacenote_book.error))
             self._draw_pacenote_markers()
             return
         if self.current is None or not self.pacenote_book.stages:
             self.setWindowTitle("ACR Telemetry Studio")
-            self.pace_note.setText("— 没有可用的赛段路书")
+            self.pace_note.setText(tr("— 没有可用的赛段路书"))
             self._draw_pacenote_markers()
             return
 
@@ -1537,12 +1565,14 @@ class TelemetryWindow(QMainWindow):
         )
         self.pace_combo.setItemText(
             0,
-            f"自动匹配 · {auto_stage.label}" if auto_stage is not None else "自动匹配",
+            tr("自动匹配 · {stage}").format(stage=auto_stage.label)
+            if auto_stage is not None
+            else tr("自动匹配"),
         )
         key = self._pacenote_stage or auto_key
         stage = self.pacenote_book.stages.get(key or "")
         if stage is None:
-            self.pace_note.setText("— 没有匹配到赛段路书")
+            self.pace_note.setText(tr("— 没有匹配到赛段路书"))
             self._draw_pacenote_markers()
             return
 
@@ -1564,22 +1594,24 @@ class TelemetryWindow(QMainWindow):
                 {"x": x, "distance": note.distance, "text": note.text},
             )
             item.setToolTip(
-                f"路书距离 {note.distance:,.0f} m · 赛段相对 {x:,.0f} m\n"
-                f"参考长度 {note.length:,.0f} m"
-                + ("\n与下一条连贯" if note.link else "")
-                + f"\n点击缩放到 {x:,.0f} m"
+                tr("路书距离 {dist:,.0f} m · 赛段相对 {rel:,.0f} m\n"
+                   "参考长度 {length:,.0f} m").format(
+                    dist=note.distance, rel=x, length=note.length)
+                + ("\n" + tr("与下一条连贯") if note.link else "")
+                + "\n" + tr("点击缩放到 {rel:,.0f} m").format(rel=x)
             )
             item.setSizeHint(QSize(0, 30))
             self.pace_list.addItem(item)
             shown += 1
 
-        mode = "手动选择" if self._pacenote_stage else "自动匹配"
-        text = f"{mode} · {stage.label} · {shown} 条"
+        mode = tr("手动选择") if self._pacenote_stage else tr("自动匹配")
+        text = tr("{mode} · {stage} · {n} 条").format(
+            mode=mode, stage=stage.label, n=shown)
         meta = self.current.meta or {}
         if not self._pacenote_stage and not str(meta.get("track") or "").strip():
-            text += " · 按距离"
+            text += tr(" · 按距离")
         if stage.start < start - 80.0 or stage.end > max_x + start + 300.0:
-            text += " · 与本次距离范围不完全匹配"
+            text += tr(" · 与本次距离范围不完全匹配")
         self.pace_note.setText(text)
         self._draw_pacenote_markers()
         if self.current is not None:
@@ -1866,8 +1898,8 @@ class TelemetryWindow(QMainWindow):
             (self.delta_plot, "s"),
             (self.speed_plot, "km/h"),
             (self.input_plot, "%"),
-            (self.gear_plot, "挡位"),
-            (self.g_plot, "转向 %"),
+            (self.gear_plot, tr("挡位")),
+            (self.g_plot, tr("转向 %")),
             (self.tire_plot, "°C"),
         ):
             try:
@@ -1901,7 +1933,7 @@ class TelemetryWindow(QMainWindow):
         delta_legend = self._make_legend(self.delta_plot)
         self._series["delta_pos"] = self._add_series(
             self.delta_plot,
-            "更慢",
+            tr("更慢"),
             C["red"],
             width=1.4,
             fill=pg.mkBrush(239, 68, 68, 50),
@@ -1909,7 +1941,7 @@ class TelemetryWindow(QMainWindow):
         )
         self._series["delta_neg"] = self._add_series(
             self.delta_plot,
-            "更快",
+            tr("更快"),
             C["green"],
             width=1.4,
             fill=pg.mkBrush(34, 197, 94, 50),
@@ -1918,11 +1950,11 @@ class TelemetryWindow(QMainWindow):
 
         speed_legend = self._make_legend(self.speed_plot)
         self._series["speed_cur"] = self._add_series(
-            self.speed_plot, "当前", C["green"], width=2.0, legend=speed_legend
+            self.speed_plot, tr("当前"), C["green"], width=2.0, legend=speed_legend
         )
         self._series["speed_ref"] = self._add_series(
             self.speed_plot,
-            "参考",
+            tr("参考"),
             C["dim"],
             width=1.2,
             style=Qt.PenStyle.DashLine,
@@ -1932,7 +1964,7 @@ class TelemetryWindow(QMainWindow):
         input_legend = self._make_legend(self.input_plot)
         self._series["gas_cur"] = self._add_series(
             self.input_plot,
-            "油门 当前",
+            tr("油门 当前"),
             C["green"],
             width=1.4,
             fill=pg.mkBrush(34, 197, 94, 32),
@@ -1940,7 +1972,7 @@ class TelemetryWindow(QMainWindow):
         )
         self._series["brake_cur"] = self._add_series(
             self.input_plot,
-            "刹车 当前",
+            tr("刹车 当前"),
             C["red"],
             width=1.4,
             fill=pg.mkBrush(239, 68, 68, 32),
@@ -1950,7 +1982,7 @@ class TelemetryWindow(QMainWindow):
         # distinct pattern: yellow dashed for throttle, blue dash-dot for brake
         self._series["gas_ref"] = self._add_series(
             self.input_plot,
-            "油门 参考",
+            tr("油门 参考"),
             C["yellow"],
             width=1.4,
             style=Qt.PenStyle.DashLine,
@@ -1958,7 +1990,7 @@ class TelemetryWindow(QMainWindow):
         )
         self._series["brake_ref"] = self._add_series(
             self.input_plot,
-            "刹车 参考",
+            tr("刹车 参考"),
             C["blue"],
             width=1.4,
             style=Qt.PenStyle.DashDotLine,
@@ -1967,7 +1999,7 @@ class TelemetryWindow(QMainWindow):
 
         gear_legend = self._make_legend(self.gear_plot)
         self._series["gear"] = self._add_series(
-            self.gear_plot, "挡位", C["text"], width=1.5, legend=gear_legend
+            self.gear_plot, tr("挡位"), C["text"], width=1.5, legend=gear_legend
         )
         gear_right = self._right_axis(self.gear_plot, "RPM")
         self._right_views["rpm"] = gear_right
@@ -1982,13 +2014,13 @@ class TelemetryWindow(QMainWindow):
 
         g_legend = self._make_legend(self.g_plot)
         self._series["steer"] = self._add_series(
-            self.g_plot, "转向 %", C["blue"], width=1.5, legend=g_legend
+            self.g_plot, tr("转向 %"), C["blue"], width=1.5, legend=g_legend
         )
         g_right = self._right_axis(self.g_plot, "G")
         self._right_views["g"] = g_right
         self._series["glat"] = self._add_series(
             self.g_plot,
-            "横向 G",
+            tr("横向 G"),
             C["amber"],
             width=1.4,
             view=g_right,
@@ -1996,7 +2028,7 @@ class TelemetryWindow(QMainWindow):
         )
         self._series["glon"] = self._add_series(
             self.g_plot,
-            "纵向 G",
+            tr("纵向 G"),
             C["yellow"],
             width=1.4,
             view=g_right,
@@ -2008,7 +2040,7 @@ class TelemetryWindow(QMainWindow):
         for i, wheel in enumerate(acr_data.WHEELS):
             self._series[f"tt_{i}"] = self._add_series(
                 self.tire_plot,
-                f"{wheel} 温度",
+                tr("{wheel} 温度").format(wheel=wheel),
                 colors[i],
                 width=1.6,
                 legend=tire_legend,
@@ -2018,7 +2050,7 @@ class TelemetryWindow(QMainWindow):
         for i, wheel in enumerate(acr_data.WHEELS):
             self._series[f"press_{i}"] = self._add_series(
                 self.tire_plot,
-                f"{wheel} 胎压",
+                tr("{wheel} 胎压").format(wheel=wheel),
                 colors[i],
                 width=1.0,
                 style=Qt.PenStyle.DashLine,
@@ -2118,9 +2150,9 @@ class TelemetryWindow(QMainWindow):
         except TypeError:
             pass
         try:
-            bottom.setLabel("距离 (m)", color=C["muted"], size="8pt")
+            bottom.setLabel(tr("距离 (m)"), color=C["muted"], size="8pt")
         except TypeError:
-            bottom.setLabel("距离 (m)")
+            bottom.setLabel(tr("距离 (m)"))
         axis.viewport().installEventFilter(self)
         self._chart_viewports[axis.viewport()] = (self.speed_plot, axis)
         return axis
@@ -2447,27 +2479,27 @@ class TelemetryWindow(QMainWindow):
         if not QSystemTrayIcon.isSystemTrayAvailable():
             return
         self.tray = QSystemTrayIcon(self._make_tray_icon(C["green"]), self)
-        self.tray.setToolTip("ACR Telemetry · 等待 AC Rally")
+        self.tray.setToolTip(tr("ACR Telemetry · 等待 AC Rally"))
         menu = QMenu(self)
         self._tray_menu = menu
-        show_action = QAction("显示分析", self)
+        show_action = QAction(tr("显示分析"), self)
         show_action.triggered.connect(self._show_window)
         menu.addAction(show_action)
-        self.tray_auto_action = QAction("自动录制", self)
+        self.tray_auto_action = QAction(tr("自动录制"), self)
         self.tray_auto_action.setCheckable(True)
         self.tray_auto_action.setChecked(True)
         self.tray_auto_action.toggled.connect(self._on_tray_auto_toggled)
         menu.addAction(self.tray_auto_action)
-        self.tray_video_action = QAction("自动录像", self)
+        self.tray_video_action = QAction(tr("自动录像"), self)
         self.tray_video_action.setCheckable(True)
         self.tray_video_action.setChecked(True)
         self.tray_video_action.toggled.connect(self._on_tray_video_toggled)
         menu.addAction(self.tray_video_action)
-        open_action = QAction("打开数据目录", self)
+        open_action = QAction(tr("打开数据目录"), self)
         open_action.triggered.connect(self._open_data_dir)
         menu.addAction(open_action)
         menu.addSeparator()
-        quit_action = QAction("退出", self)
+        quit_action = QAction(tr("退出"), self)
         quit_action.triggered.connect(self._quit_app)
         menu.addAction(quit_action)
         self.tray.setContextMenu(menu)
@@ -2478,7 +2510,7 @@ class TelemetryWindow(QMainWindow):
             app.setQuitOnLastWindowClosed(False)
 
     def _setup_auto_recorder(self) -> None:
-        self._set_live("waiting", "等待 AC Rally …")
+        self._set_live("waiting", tr("等待 AC Rally …"))
         self._auto_recorder = AutoRecorder(self.directory)
         self._auto_recorder.live.connect(self._on_live)
         self._auto_recorder.finished_run.connect(self._on_run_finished)
@@ -2490,9 +2522,9 @@ class TelemetryWindow(QMainWindow):
 
     def _on_connection(self, connected: bool) -> None:
         if connected:
-            self.status.showMessage("已连接共享内存 · 等待赛段")
+            self.status.showMessage(tr("已连接共享内存 · 等待赛段"))
         else:
-            self.status.showMessage("等待 AC Rally …")
+            self.status.showMessage(tr("等待 AC Rally …"))
 
     def _on_live(self, data: dict) -> None:
         state = str(data.get("state", "waiting"))
@@ -2500,17 +2532,18 @@ class TelemetryWindow(QMainWindow):
             return
         if state == "recording":
             self._saved_until = 0.0
-            detail = (
-                f"{acr_data.format_time(data.get('stage_time', 0.0))} · "
-                f"{data.get('speed', 0.0):.0f} km/h · "
-                f"{int(data.get('gear', 0))}挡 · "
-                f"油门 {data.get('gas', 0.0):.0f}% · "
-                f"刹车 {data.get('brake', 0.0):.0f}% · "
-                f"{data.get('rows', 0)} 行"
+            detail = tr("{time} · {speed:.0f} km/h · {gear}挡 · "
+                        "油门 {gas:.0f}% · 刹车 {brake:.0f}% · {rows} 行").format(
+                time=acr_data.format_time(data.get("stage_time", 0.0)),
+                speed=data.get("speed", 0.0),
+                gear=int(data.get("gear", 0)),
+                gas=data.get("gas", 0.0),
+                brake=data.get("brake", 0.0),
+                rows=data.get("rows", 0),
             )
             self._set_live("recording", detail)
         elif state == "saved":
-            detail = str(data.get("message", "已保存"))
+            detail = str(data.get("message", tr("已保存")))
             self._saved_until = time.monotonic() + 8.0
             self._set_live("saved", detail)
         else:
@@ -2519,9 +2552,8 @@ class TelemetryWindow(QMainWindow):
     def _on_run_finished(self, path: str, stage_time: float) -> None:
         self._new_run_path = path
         self._auto_select_newest = True
-        self._saved_message = (
-            f"已保存 {acr_data.format_time(stage_time)} · 分析更新中…"
-        )
+        self._saved_message = tr("已保存 {time} · 分析更新中…").format(
+            time=acr_data.format_time(stage_time))
         self._saved_until = time.monotonic() + 20.0
         self._set_live("saved", self._saved_message)
         if self.loader is None:
@@ -2539,9 +2571,9 @@ class TelemetryWindow(QMainWindow):
             self._auto_recorder.set_auto(enabled)
         self._set_live(
             "armed" if enabled else "waiting",
-            "自动录制已开启 · 等待赛段"
+            tr("自动录制已开启 · 等待赛段")
             if enabled
-            else "自动录制已关闭",
+            else tr("自动录制已关闭"),
         )
 
     def _on_tray_auto_toggled(self, checked: bool) -> None:
@@ -2593,7 +2625,7 @@ class TelemetryWindow(QMainWindow):
         wanted = str(self._load_ui_state().get("video_window", "") or "")
         combo.blockSignals(True)
         combo.clear()
-        combo.addItem("自动匹配 AC Rally", "")
+        combo.addItem(tr("自动匹配 AC Rally"), "")
         try:
             import acr_video
 
@@ -2635,9 +2667,9 @@ class TelemetryWindow(QMainWindow):
             self._auto_recorder.set_video(enabled=enabled)
         self._save_ui_state({"video_enabled": enabled})
         self.status.showMessage(
-            "自动录像已开启 · 跑赛段时同步录制画面和声音"
+            tr("自动录像已开启 · 跑赛段时同步录制画面和声音")
             if enabled
-            else "自动录像已关闭"
+            else tr("自动录像已关闭")
         )
 
     def _on_tray_video_toggled(self, checked: bool) -> None:
@@ -2651,30 +2683,30 @@ class TelemetryWindow(QMainWindow):
     def _on_video_event(self, data: dict) -> None:
         state = str(data.get("state", "idle"))
         if state == "recording":
-            target = data.get("target") or "自动匹配窗口"
-            self._set_replay_state(f"录像中 · {target}")
+            target = data.get("target") or tr("自动匹配窗口")
+            self._set_replay_state(tr("录像中 · {target}").format(target=target))
             if self.video_view is not None:
-                self.video_view.setText("录像中…\n回放面板在赛段结束后可播放")
-            self.status.showMessage(f"正在录像 · {target}")
+                self.video_view.setText(tr("录像中…\n回放面板在赛段结束后可播放"))
+            self.status.showMessage(tr("正在录像 · {target}").format(target=target))
         elif state == "error":
-            message = f"录像失败：{data.get('error')}"
-            self._set_replay_state("录像失败")
+            message = tr("录像失败：{error}").format(error=data.get("error"))
+            self._set_replay_state(tr("录像失败"))
             self.status.showMessage(message)
             if self.tray is not None:
                 self.tray.showMessage(
-                    "ACR Telemetry", message + "\n遥测照常录制",
+                    "ACR Telemetry", message + "\n" + tr("遥测照常录制"),
                     QSystemTrayIcon.MessageIcon.Warning, 6000,
                 )
         else:
             if data.get("discarded"):
-                self._set_replay_state("赛段重置 · 录像已丢弃")
+                self._set_replay_state(tr("赛段重置 · 录像已丢弃"))
             elif data.get("error"):
-                self._set_replay_state("录像中断")
+                self._set_replay_state(tr("录像中断"))
             else:
                 self._set_replay_state(
-                    f"录像 {data.get('seconds', 0):.0f}s · "
-                    f"{data.get('mb', 0):.0f}MB"
-                )
+                    tr("录像 {seconds:.0f}s · {mb:.0f}MB").format(
+                        seconds=data.get("seconds", 0), mb=data.get("mb", 0)))
+
             self._refresh_video_usage()
 
     def _set_replay_state(self, text: str) -> None:
@@ -2689,16 +2721,17 @@ class TelemetryWindow(QMainWindow):
         files = sorted(folder.glob("*.mp4")) if folder.exists() else []
         total_mb = sum(f.stat().st_size for f in files) / 1048576.0
         if not files:
-            self.video_info.setText("无录像")
-            self.video_info.setToolTip("跑完赛段后自动出现在这里 · 点击打开目录")
+            self.video_info.setText(tr("无录像"))
+            self.video_info.setToolTip(tr("跑完赛段后自动出现在这里 · 点击打开目录"))
             return
         self.video_info.setText(
-            f"录像 {len(files)} · {total_mb / 1024.0:.2f}GB"
+            tr("录像 {n} · {gb:.2f}GB").format(n=len(files), gb=total_mb / 1024.0)
             if total_mb >= 1024
-            else f"录像 {len(files)} · {total_mb:.0f}MB"
+            else tr("录像 {n} · {mb:.0f}MB").format(n=len(files), mb=total_mb)
         )
         self.video_info.setToolTip(
-            f"{folder}\n共 {len(files)} 段 · {total_mb:.0f}MB\n点击打开目录"
+            tr("{folder}\n共 {n} 段 · {mb:.0f}MB\n点击打开目录").format(
+                folder=folder, n=len(files), mb=total_mb)
         )
 
     def _open_video_folder(self) -> None:
@@ -2749,18 +2782,18 @@ class TelemetryWindow(QMainWindow):
         path = self._manual_video or self._video_path_for(run)
         if path is None:
             self.video_view.setText(
-                "此 run 没有录像\n自动录像开启后按赛段生成"
-                if run is not None else "尚无录像")
-            self._set_replay_state("无录像")
+                tr("此 run 没有录像\n自动录像开启后按赛段生成")
+                if run is not None else tr("尚无录像"))
+            self._set_replay_state(tr("无录像"))
             self.video_time.setText("0:00.0 / —")
             self.play_btn.setEnabled(False)
             return
         if not player.load(path):
-            self._set_replay_state("录像打不开")
+            self._set_replay_state(tr("录像打不开"))
             self.play_btn.setEnabled(False)
             return
         self.play_btn.setEnabled(True)
-        label = "外部录像 · 需对齐" if self._manual_video else "录像就绪"
+        label = tr("外部录像 · 需对齐") if self._manual_video else tr("录像就绪")
         self._set_replay_state(f"{label} {acr_data.format_time(player.duration)}")
         self.video_time.setText(
             f"0:00.0 / {acr_data.format_time(player.duration)}")
@@ -2844,17 +2877,17 @@ class TelemetryWindow(QMainWindow):
     def _on_video_state(self, state: str) -> None:
         if self.play_btn is None:
             return
-        self.play_btn.setText("暂停" if state == "playing" else "播放")
+        self.play_btn.setText(tr("暂停") if state == "playing" else tr("播放"))
 
     def _on_video_play_error(self, message: str) -> None:
         self.status.showMessage(message)
-        self._set_replay_state("播放失败")
+        self._set_replay_state(tr("播放失败"))
 
     def _on_align_video(self) -> None:
         """Pin the video's current instant to the chart cursor's distance."""
         player = getattr(self, "_player", None)
         if player is None or player._container is None or self.current is None:
-            self.status.showMessage("先加载一段录像再对齐")
+            self.status.showMessage(tr("先加载一段录像再对齐"))
             return
         position = player._thread.playhead if player._thread else 0.0
         key = self.current.id
@@ -2862,21 +2895,22 @@ class TelemetryWindow(QMainWindow):
         self._video_offset_override[key] = offset
         player.pause()
         self._set_replay_state(
-            f"已对齐 {self._cursor_x:,.0f}m ↔ {acr_data.format_time(position)}")
+            tr("已对齐 {dist:,.0f}m ↔ {time}").format(
+                dist=self._cursor_x, time=acr_data.format_time(position)))
         self.status.showMessage(
-            f"录像已对齐：视频 {acr_data.format_time(position)} = "
-            f"{self._cursor_x:,.0f} m")
+            tr("录像已对齐：视频 {time} = {dist:,.0f} m").format(
+                time=acr_data.format_time(position), dist=self._cursor_x))
 
     def _on_open_external_video(self) -> None:
         start = str(self._video_dir())
         path, _ = QFileDialog.getOpenFileName(
-            self, "选择录像文件", start, "视频 (*.mp4 *.mkv *.mov *.avi)")
+            self, tr("选择录像文件"), start, tr("视频 (*.mp4 *.mkv *.mov *.avi)"))
         if not path:
             return
         self._manual_video = Path(path)
         self._load_run_video()
         self.status.showMessage(
-            "外部录像已载入 · 把光标放到已知点（如终点）后点“对齐到光标”")
+            tr("外部录像已载入 · 把光标放到已知点（如终点）后点“对齐到光标”"))
 
     def _on_tray_activated(self, reason) -> None:
         if reason in (
@@ -2904,7 +2938,7 @@ class TelemetryWindow(QMainWindow):
             self.hide()
             self.tray.showMessage(
                 "ACR Telemetry",
-                "仍在托盘运行，赛段开始会自动录制",
+                tr("仍在托盘运行，赛段开始会自动录制"),
                 QSystemTrayIcon.MessageIcon.Information,
                 3000,
             )
@@ -2922,8 +2956,8 @@ class TelemetryWindow(QMainWindow):
         self.current_combo.setEnabled(False)
         self.reference_combo.setEnabled(False)
         self.refresh_btn.setEnabled(False)
-        self.status.showMessage("正在扫描 telemetry/*.csv …")
-        self._loading_text = "正在扫描 telemetry/*.csv …"
+        self.status.showMessage(tr("正在扫描 telemetry/*.csv …"))
+        self._loading_text = tr("正在扫描 telemetry/*.csv …")
         self.loader = Loader(self.directory)
         self.loader.loaded.connect(self._on_loaded)
         self.loader.failed.connect(self._on_failed)
@@ -2979,10 +3013,8 @@ class TelemetryWindow(QMainWindow):
                     else current_id
                 )
                 self.set_runs(runs, current_id, reference_id)
-                self._saved_message = (
-                    f"已保存 {acr_data.format_time(new_run.summary['time'])}"
-                    " · 分析已更新"
-                )
+                self._saved_message = tr("已保存 {time} · 分析已更新").format(
+                    time=acr_data.format_time(new_run.summary["time"]))
                 self._saved_until = time.monotonic() + 12.0
                 self._set_live("saved", self._saved_message)
                 if self.tray is not None:
@@ -2995,7 +3027,7 @@ class TelemetryWindow(QMainWindow):
             else:
                 self.set_runs(runs, current_id, reference_id)
                 self._saved_message = (
-                    "录制已保存，但数据不足 5 秒，未加入分析"
+                    tr("录制已保存，但数据不足 5 秒，未加入分析")
                 )
                 self._saved_until = time.monotonic() + 10.0
                 self._set_live("saved", self._saved_message)
@@ -3018,7 +3050,7 @@ class TelemetryWindow(QMainWindow):
         self.current_combo.setEnabled(True)
         self.reference_combo.setEnabled(True)
         self.refresh_btn.setEnabled(True)
-        self.status.showMessage("加载失败")
+        self.status.showMessage(tr("加载失败"))
         print(error, file=sys.stderr)
 
     def set_runs(self, runs, current_id=None, reference_id=None) -> None:
@@ -3030,8 +3062,8 @@ class TelemetryWindow(QMainWindow):
             self.reference_combo.clear()
             self.time_label.setText("—")
             self.delta_label.setText("—")
-            self.ref_label.setText("telemetry/ 下没有可用 CSV")
-            self.status.showMessage("telemetry/ 下没有可用 CSV")
+            self.ref_label.setText(tr("telemetry/ 下没有可用 CSV"))
+            self.status.showMessage(tr("telemetry/ 下没有可用 CSV"))
             self._update_pace_notes()
             return
 
@@ -3092,8 +3124,9 @@ class TelemetryWindow(QMainWindow):
         self._rebuild_map()
         self._load_run_video()
         self.status.showMessage(
-            f"{len(self.runs)} runs · {current.summary['rate']:.0f} Hz · "
-            f"{current.label}  /  参考 {reference.label}"
+            tr("{n} runs · {rate:.0f} Hz · {cur}  /  参考 {ref}").format(
+                n=len(self.runs), rate=current.summary["rate"],
+                cur=current.label, ref=reference.label)
         )
 
     def _update_summary(self) -> None:
@@ -3103,14 +3136,16 @@ class TelemetryWindow(QMainWindow):
         delta = summary["time"] - reference.summary["time"]
         self.time_label.setText(acr_data.format_time(summary["time"]))
         if abs(delta) < 0.0005:
-            self.delta_label.setText("Δ 参考  0.000s")
+            self.delta_label.setText(tr("Δ 参考  0.000s"))
             self.delta_label.setStyleSheet(f"color:{C['muted']};")
         else:
-            self.delta_label.setText(f"Δ 参考  {delta:+.3f}s")
+            self.delta_label.setText(
+                tr("Δ 参考  {delta:+.3f}s").format(delta=delta))
             self.delta_label.setStyleSheet(
                 f"color:{C['green'] if delta < 0 else C['red']};"
             )
-        self.ref_label.setText(f"参考 · {reference.label}")
+        self.ref_label.setText(
+            tr("参考 · {ref}").format(ref=reference.label))
         if summary["clean"]:
             self.clean_badge.setText("CLEAN")
             self.clean_badge.setStyleSheet(
@@ -3143,7 +3178,7 @@ class TelemetryWindow(QMainWindow):
             row = self.splits_table.rowCount()
             self.splits_table.insertRow(row)
             is_finish = split.get("finish", False)
-            distance_text = "终点" if is_finish else f"{split['distance']/1000:.0f} km"
+            distance_text = tr("终点") if is_finish else f"{split['distance']/1000:.0f} km"
             delta = split["delta"]
             items = [
                 (distance_text, C["muted"]),
@@ -3183,7 +3218,8 @@ class TelemetryWindow(QMainWindow):
         item = QListWidgetItem(text)
         item.setForeground(QBrush(QColor(color)))
         item.setData(Qt.ItemDataRole.UserRole, zone)
-        item.setToolTip(f"点击缩放到 {zone['start']:.0f}–{zone['end']:.0f} m")
+        item.setToolTip(tr("点击缩放到 {start:.0f}–{end:.0f} m").format(
+            start=zone["start"], end=zone["end"]))
         item.setSizeHint(QSize(0, 30))
         self.zone_list.addItem(item)
 
@@ -3192,41 +3228,43 @@ class TelemetryWindow(QMainWindow):
         theoretical = float(analysis.get("theoretical_time", 0.0))
         potential = float(analysis.get("potential_gain", 0.0))
         self.theoretical_label.setText(
-            f"两跑理论最佳  {acr_data.format_time(theoretical)}"
+            tr("两跑理论最佳  {time}").format(
+                time=acr_data.format_time(theoretical))
             if theoretical > 0
-            else "两跑理论最佳  —"
+            else tr("两跑理论最佳  —")
         )
-        self.potential_label.setText(f"可提升  +{potential:.2f}s")
+        self.potential_label.setText(
+            tr("可提升  +{gain:.2f}s").format(gain=potential))
         self.potential_label.setStyleSheet(
             f"color:{C['amber'] if potential > 0.05 else C['muted']};"
         )
         if self.reference is None or self.reference.id == self.current.id:
-            self.analysis_note.setText("100m 分段 · 同一 run 对比")
+            self.analysis_note.setText(tr("100m 分段 · 同一 run 对比"))
         else:
             self.analysis_note.setText(
-                f"100m 分段 · 已剔除参考事件 {len(self.reference.incidents)} 个"
-                "（灰色虚线）"
+                tr("100m 分段 · 已剔除参考事件 {n} 个（灰色虚线）").format(
+                    n=len(self.reference.incidents))
             )
 
         self.zone_list.clear()
         gains = analysis.get("top_gains", [])
         losses = analysis.get("top_losses", [])
         if not gains and not losses:
-            item = QListWidgetItem("— 暂无可分析的干净分段")
+            item = QListWidgetItem(tr("— 暂无可分析的干净分段"))
             item.setForeground(QBrush(QColor(C["muted"])))
             self.zone_list.addItem(item)
         else:
-            self._add_zone_header("可提升 · 当前更慢", C["red"])
+            self._add_zone_header(tr("可提升 · 当前更慢"), C["red"])
             for zone in losses[:4]:
                 self._add_zone_item(zone, C["red"])
-            self._add_zone_header("已获得 · 当前更快", C["green"])
+            self._add_zone_header(tr("已获得 · 当前更快"), C["green"])
             for zone in gains[:4]:
                 self._add_zone_item(zone, C["green"])
 
         self.brake_list.clear()
         brakes = analysis.get("braking_zones", [])
         if not brakes:
-            item = QListWidgetItem("— 没有检测到刹车区")
+            item = QListWidgetItem(tr("— 没有检测到刹车区"))
             item.setForeground(QBrush(QColor(C["muted"])))
             self.brake_list.addItem(item)
         for zone in brakes:
@@ -3234,21 +3272,21 @@ class TelemetryWindow(QMainWindow):
             color = C["red"] if delta > 0 else C["green"]
             if zone.get("reference_incident"):
                 color = C["dim"]
-            text = (
-                f"● {zone['start']/1000:.2f} km   Δ{delta:+.2f}s   "
-                f"入 {zone['current_entry']:.0f}/{zone['reference_entry']:.0f}   "
-                f"心 {zone['current_min']:.0f}/{zone['reference_min']:.0f}   "
-                f"出 {zone['current_exit']:.0f}/{zone['reference_exit']:.0f}"
-            )
+            text = tr("● {start:.2f} km   Δ{delta:+.2f}s   "
+                      "入 {ce:.0f}/{re:.0f}  心 {cm:.0f}/{rm:.0f}  "
+                      "出 {cx:.0f}/{rx:.0f}").format(
+                start=zone["start"] / 1000, delta=delta,
+                ce=zone["current_entry"], re=zone["reference_entry"],
+                cm=zone["current_min"], rm=zone["reference_min"],
+                cx=zone["current_exit"], rx=zone["reference_exit"])
             if zone.get("reference_incident"):
-                text += "  · 参考事件附近"
+                text += tr("  · 参考事件附近")
             item = QListWidgetItem(text)
             item.setForeground(QBrush(QColor(color)))
             item.setData(Qt.ItemDataRole.UserRole, zone)
-            item.setToolTip(
-                f"点击缩放到 {zone['start']:.0f}–{zone['end']:.0f} m\n"
-                f"时间差 {delta:+.3f}s（当前 - 参考）"
-            )
+            item.setToolTip(tr(
+                "点击缩放到 {start:.0f}–{end:.0f} m\n时间差 {delta:+.3f}s（当前 - 参考）"
+            ).format(start=zone["start"], end=zone["end"], delta=delta))
             item.setSizeHint(QSize(0, 30))
             self.brake_list.addItem(item)
 
@@ -3269,12 +3307,12 @@ class TelemetryWindow(QMainWindow):
         self.incident_list.clear()
         incidents = self.current.incidents if self.current else []
         if not incidents:
-            item = QListWidgetItem("CLEAN · 无停车 / 撞击 / 重生")
+            item = QListWidgetItem(tr("CLEAN · 无停车 / 撞击 / 重生"))
             item.setForeground(QBrush(QColor(C["green"])))
             item.setSizeHint(QSize(0, 34))
             self.incident_list.addItem(item)
             return
-        kind_labels = {"impact": "撞击", "stop": "停车", "respawn": "重生"}
+        kind_labels = {"impact": tr("撞击"), "stop": tr("停车"), "respawn": tr("重生")}
         kind_colors = {"impact": C["red"], "stop": C["amber"], "respawn": C["purple"]}
         for incident in incidents:
             kind = incident["kind"]
@@ -3286,7 +3324,8 @@ class TelemetryWindow(QMainWindow):
             item = QListWidgetItem(text)
             item.setForeground(QBrush(QColor(kind_colors.get(kind, C["text"]))))
             item.setData(Qt.ItemDataRole.UserRole, incident)
-            item.setToolTip(f"点击缩放到 {incident['distance']:.0f}m")
+            item.setToolTip(tr("点击缩放到 {dist:.0f}m").format(
+                dist=incident["distance"]))
             if incident.get("major"):
                 font = item.font()
                 font.setBold(True)
@@ -3565,9 +3604,10 @@ class TelemetryWindow(QMainWindow):
                     f"color:{self._pacenote_color(note)};"
                 )
                 note_label.setToolTip(
-                    f"路书距离 {note.distance:,.0f} m · 赛段相对 {note_x:,.0f} m\n"
-                    f"参考长度 {note.length:,.0f} m"
-                    + ("\n与下一条连贯" if note.link else "")
+                    tr("路书距离 {dist:,.0f} m · 赛段相对 {rel:,.0f} m\n"
+                       "参考长度 {length:,.0f} m").format(
+                        dist=note.distance, rel=note_x, length=note.length)
+                    + ("\n" + tr("与下一条连贯") if note.link else "")
                 )
         delta_label = self.readout["delta"]
         if abs(delta) < 0.0005:
@@ -3663,7 +3703,17 @@ def main() -> int:
         default=None,
         help="window title substring for --record-test (default: auto)",
     )
+    parser.add_argument(
+        "--lang",
+        choices=tuple(acr_i18n.LANGUAGES),
+        help="UI language for this launch (overrides the saved setting)",
+    )
     args = parser.parse_args()
+
+    if args.lang:
+        global _LANG_OVERRIDE
+        _LANG_OVERRIDE = args.lang
+        acr_i18n.set_language(args.lang)
 
     if args.record_test:
         code = _record_selftest(args.record_test, args.record_window,
@@ -3691,7 +3741,7 @@ def main() -> int:
             QMessageBox.information(
                 None,
                 "ACR Telemetry",
-                "客户端已经在运行，请从系统托盘打开。",
+                tr("客户端已经在运行，请从系统托盘打开。"),
             )
             return 0
 

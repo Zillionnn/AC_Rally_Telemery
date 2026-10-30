@@ -121,7 +121,7 @@ class VideoRecorder:
 
         target = (hwnd, None) if hwnd else find_window(patterns)
         if not target:
-            raise RuntimeError("找不到游戏窗口")
+            raise RuntimeError(tr("找不到游戏窗口"))
         self.target = (int(target[0]), target[1] if len(target) > 1 else None)
         self._state["hwnd"] = int(target[0])
 
@@ -181,7 +181,8 @@ class VideoRecorder:
                 })
             self._pix_fmt = "nv12" if is_nvenc else "yuv420p"
             return stream, candidate
-        raise RuntimeError(f"没有可用的 H.264 编码器: {last_error}")
+        raise RuntimeError(tr("没有可用的 H.264 编码器: {error}").format(
+            error=last_error))
 
     def _add_audio_stream(self, av):
         if not self.audio_enabled:
@@ -196,7 +197,8 @@ class VideoRecorder:
         except Exception as exc:  # noqa: BLE001
             self._pa.terminate()
             self._pa = None
-            self._state["error"] = f"音频设备不可用: {exc}"
+            self._state["error"] = tr("音频设备不可用: {error}").format(
+                error=exc)
             return None, None
         rate = int(device["defaultSampleRate"])
         channels = max(1, int(device["maxInputChannels"]))
@@ -384,7 +386,7 @@ class VideoRecorder:
         path = state.get("out")
         errors = list(state.get("errors", []))
         if state.get("convert_errors"):
-            errors.append("转换失败 x%d: %s" % (
+            errors.append(tr("转换失败 x%d: %s") % (
                 len(state["convert_errors"]), state["convert_errors"][0]))
         mb = path.stat().st_size / 1048576.0 if path and path.exists() else 0.0
         result = {

@@ -100,12 +100,12 @@ class AutoRecorder(QThread):
             except OSError:
                 self._finish("disconnected", emit=False)
                 self.connection.emit(False)
-                self._emit("waiting", "等待 AC Rally …")
+                self._emit("waiting", tr("等待 AC Rally …"))
                 time.sleep(1.0)
             except Exception:
                 self._finish("error", emit=False)
                 self.connection.emit(False)
-                self._emit("waiting", "等待 AC Rally …")
+                self._emit("waiting", tr("等待 AC Rally …"))
                 time.sleep(1.0)
             finally:
                 self._finish("closed", emit=False)
@@ -129,9 +129,9 @@ class AutoRecorder(QThread):
             initial_stage = 0.0
         waiting_for_next = initial_stage > 2.0
         if waiting_for_next:
-            self._emit("waiting", "检测到赛段进行中 · 等待下一次")
+            self._emit("waiting", tr("检测到赛段进行中 · 等待下一次"))
         else:
-            self._emit("armed", "已连接 · 进入赛段自动录制")
+            self._emit("armed", tr("已连接 · 进入赛段自动录制"))
 
         last_pid = None
         last_live = 0.0
@@ -159,7 +159,7 @@ class AutoRecorder(QThread):
             if self._record is not None and not self._auto:
                 self._finish("auto off", emit=False)
                 waiting_for_next = True
-                self._emit("waiting", "自动录制已关闭")
+                self._emit("waiting", tr("自动录制已关闭"))
 
             if waiting_for_next:
                 if stage < 0.5:
@@ -167,9 +167,9 @@ class AutoRecorder(QThread):
                     last_stage = stage
                     last_change = now
                     if self._auto:
-                        self._emit("armed", "已连接 · 进入赛段自动录制")
+                        self._emit("armed", tr("已连接 · 进入赛段自动录制"))
                     else:
-                        self._emit("waiting", "自动录制已关闭")
+                        self._emit("waiting", tr("自动录制已关闭"))
             elif self._record is None:
                 if self._auto and stage > 0.05:
                     self._start(p, g, static, stage)
@@ -179,14 +179,15 @@ class AutoRecorder(QThread):
                     self._finish("stage reset", discard=True, emit=False)
                     last_stage = stage
                     last_change = now
-                    self._emit("armed", "赛段重置 · 等待下一次")
+                    self._emit("armed", tr("赛段重置 · 等待下一次"))
                 elif now - last_change > 3.0 and p.speed_kmh < 2.0:
                     duration = self._record["last_stage"] if self._record else stage
                     self._finish("finish")
                     waiting_for_next = True
                     self._emit(
                         "saved",
-                        f"已保存 {acr_data.format_time(duration)} · 分析更新中…",
+                        tr("已保存 {time} · 分析更新中…").format(
+                            time=acr_data.format_time(duration)),
                         duration,
                         p.speed_kmh,
                         p.gear,
@@ -200,7 +201,7 @@ class AutoRecorder(QThread):
                     record = self._record
                     self._emit(
                         "recording",
-                        "录制中",
+                        tr("录制中"),
                         stage,
                         p.speed_kmh,
                         p.gear,
@@ -209,12 +210,12 @@ class AutoRecorder(QThread):
                         record["rows"],
                     )
                 elif not self._auto:
-                    self._emit("waiting", "自动录制已关闭", stage)
+                    self._emit("waiting", tr("自动录制已关闭"), stage)
                 elif waiting_for_next:
-                    self._emit("waiting", "等待下一次赛段", stage)
+                    self._emit("waiting", tr("等待下一次赛段"), stage)
                 else:
                     self._emit(
-                        "armed", "已连接 · 进入赛段自动录制", stage
+                        "armed", tr("已连接 · 进入赛段自动录制"), stage
                     )
             time.sleep(0.001)
 
@@ -253,7 +254,7 @@ class AutoRecorder(QThread):
         self._video_start(path, stage)
         self._emit(
             "recording",
-            "录制中",
+            tr("录制中"),
             stage,
             p.speed_kmh,
             p.gear,
@@ -297,10 +298,11 @@ class AutoRecorder(QThread):
             if self._capture_window:
                 hit = acr_video.find_window((self._capture_window,))
                 if hit is None:
-                    raise RuntimeError(f"找不到窗口「{self._capture_window}」")
+                    raise RuntimeError(tr("找不到窗口「{title}」").format(
+                        title=self._capture_window))
                 hwnd = hit[0]
             if not recorder.start(out, hwnd=hwnd):
-                raise RuntimeError("录像启动失败")
+                raise RuntimeError(tr("录像启动失败"))
             self._recorder = recorder
             record["video"] = out.name
             record["video_offset"] = float(stage)
