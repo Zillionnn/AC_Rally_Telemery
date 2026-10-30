@@ -34,6 +34,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QGraphicsItem,
     QGridLayout,
+    QGroupBox,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -43,6 +44,7 @@ from PySide6.QtWidgets import (
     QMenu,
     QMessageBox,
     QPushButton,
+    QRadioButton,
     QScrollArea,
     QSizePolicy,
     QSlider,
@@ -772,6 +774,7 @@ class TelemetryWindow(QMainWindow):
         self._series = {}
         self._right_views = {}
         self.readout = {}
+        self.readout_captions = []
         self.stat_values = {}
         self.tray = None
         self.tray_auto_action = None
@@ -944,7 +947,7 @@ class TelemetryWindow(QMainWindow):
             self.lang_combo.addItem(name, code)
         self.lang_combo.setCurrentIndex(
             max(0, self.lang_combo.findData(acr_i18n.language())))
-        self.lang_combo.setToolTip(tr("语言 · 重启后生效"))
+        self.lang_combo.setToolTip(tr("语言 · 立即生效"))
         self.lang_combo.currentIndexChanged.connect(self._on_language_changed)
         layout.addWidget(self.lang_combo)
         return frame
@@ -996,20 +999,21 @@ class TelemetryWindow(QMainWindow):
         layout.setContentsMargins(18, 6, 18, 6)
         layout.setSpacing(26)
         fields = (
-            ("distance", tr("距离"), "m"),
-            ("time", tr("时间"), ""),
-            ("speed", tr("速度"), "km/h"),
-            ("gas", tr("油门"), "%"),
-            ("brake", tr("刹车"), "%"),
-            ("gear", tr("挡位"), ""),
-            ("delta", tr("Δ 参考"), "s"),
-            ("ref_speed", tr("参考速度"), "km/h"),
-            ("pacenote", tr("路书"), ""),
+            ("distance", "距离", "m"),
+            ("time", "时间", ""),
+            ("speed", "速度", "km/h"),
+            ("gas", "油门", "%"),
+            ("brake", "刹车", "%"),
+            ("gear", "挡位", ""),
+            ("delta", "Δ 参考", "s"),
+            ("ref_speed", "参考速度", "km/h"),
+            ("pacenote", "路书", ""),
         )
         for key, caption, unit in fields:
             box = QVBoxLayout()
             box.setSpacing(0)
-            caption_label = QLabel(f"{caption}  {unit}".strip())
+            caption_label = QLabel(f"{tr(caption)}  {unit}".strip())
+            self.readout_captions.append((caption_label, caption, unit))
             caption_label.setObjectName("readoutCaption")
             value_label = QLabel("—")
             value_label.setObjectName("readoutValue")
@@ -1118,11 +1122,13 @@ class TelemetryWindow(QMainWindow):
         open_btn.clicked.connect(self._on_open_external_video)
         levels.addWidget(open_btn)
         self.quality_combo = QComboBox()
+        self._quality_labels = []
         for label, width, height, bitrate in (
             ("720p", 1280, 720, 5.0),
             ("1080p", 1920, 1080, 8.0),
             ("1440p", 2560, 1440, 14.0),
         ):
+            self._quality_labels.append(label)
             self.quality_combo.addItem(
                 tr("画质 {label}").format(label=label),
                 {"width": width, "height": height, "bitrate_mbps": bitrate},
@@ -1189,10 +1195,73 @@ class TelemetryWindow(QMainWindow):
 
     def _on_language_changed(self, _index: int) -> None:
         code = self.lang_combo.currentData()
-        if not code:
+        if not code or str(code) == acr_i18n.language():
             return
+        previous = acr_i18n.language()
+        acr_i18n.set_language(str(code))
         self._save_ui_state({"language": str(code)})
-        self.status.showMessage(tr("语言已保存 · 重启客户端后生效"))
+        self._retranslate(previous)
+        self.status.showMessage(tr("语言已切换"))
+
+    def _retranslate(self, previous: str) -> None:
+        """Swap every visible string in place, then rebuild the dynamic parts."""
+        def conv(text: str) -> str:
+            return acr_i18n.translate_value(text, previous, acr_i18n.language())
+
+        central = self.centralWidget()
+        if central is not None:
+            for widget in central.findChildren(QWidget):
+                if isinstance(widget, (QLabel, QPushButton, QCheckBox, QRadioButton)):
+                    widget.setText(conv(widget.text()))
+                elif isinstance(widget, QGroupBox):
+                    widget.setTitle(conv(widget.title()))
+                elif isinstance(widget, QTabWidget):
+                    for i in range(widget.count()):
+                        widget.setTabText(i, conv(widget.tabText(i)))
+                elif isinstance(widget, QComboBox):
+                    for i in range(widget.count()):
+                        widget.setItemText(i, conv(widget.itemText(i)))
+                tip = widget.toolTip()
+                if tip:
+                    widget.setToolTip(conv(tip))
+        for plot in getattr(self, "plots", ()):
+            title = getattr(plot, "titleLabel", None)
+            if title is not None and getattr(title, "text", ""):
+                plot.setTitle(conv(title.text))
+            legend = getattr(plot, "legend", None)
+            for entry in (getattr(legend, "items", []) if legend is not None else []):
+                try:
+                    entry[1].setText(conv(entry[1].text))
+                except Exception:
+                    pass
+            for side in ("left", "right"):
+                try:
+                    axis = plot.getAxis(side)
+                    if getattr(axis, "labelText", ""):
+                        axis.setLabel(conv(axis.labelText),
+                                      color=C["muted"], size="8pt")
+                except Exception:
+                    pass
+        for label, caption, unit in self.readout_captions:
+            label.setText(f"{tr(caption)}  {unit}".strip())
+        for index, name in enumerate(getattr(self, "_quality_labels", [])):
+            self.quality_combo.setItemText(
+                index, tr("画质 {label}").format(label=name))
+        if self.current is not None:
+            self._update_summary()
+            self._update_analysis()
+            self._update_splits()
+            self._update_incidents()
+            self._update_pace_notes()
+        self._refresh_video_usage()
+        message = self.status.currentMessage()
+        if message:
+            self.status.showMessage(conv(message))
+        if self.tray is not None:
+            menu = self.tray.contextMenu()
+            for action in (menu.actions() if menu is not None else []):
+                if action.text():
+                    action.setText(conv(action.text()))
 
     def _load_ui_state(self) -> dict:
         if not hasattr(self, "_ui_state"):

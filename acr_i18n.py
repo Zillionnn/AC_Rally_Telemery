@@ -27,6 +27,33 @@ def tr(text: str) -> str:
     return EN.get(text, text)
 
 
+_reversed: dict[str, dict[str, str]] = {}
+
+
+def _reverse(lang: str) -> dict[str, str]:
+    table = _reversed.get(lang)
+    if table is None:
+        table = {}
+        for zh, en in EN.items():
+            table[en if lang == "en" else zh] = zh
+        _reversed[lang] = table
+    return table
+
+
+def translate_value(text: str, from_lang: str, to_lang: str) -> str:
+    """Re-express text that is already showing in `from_lang` as `to_lang`.
+
+    Used to retranslate a live window in place: the widget text is matched
+    back to its catalogue key and replaced with the other language.
+    """
+    if from_lang == to_lang or not isinstance(text, str):
+        return text
+    key = _reverse(from_lang).get(text)
+    if key is None:
+        return text
+    return key if to_lang == "zh" else EN.get(key, key)
+
+
 EN = {
     "此 run 没有录像\n自动录像开启后按赛段生成":
         "No video for this run\nOne is made per stage once auto video is on",
@@ -87,6 +114,8 @@ EN = {
     "录像中…\n回放面板在赛段结束后可播放":
         "Recording…\nThe replay is available once the stage ends",
     "正在扫描 telemetry/*.csv …": "Scanning telemetry/*.csv …",
+    "语言 · 立即生效": "Language · applies immediately",
+    "语言已切换": "Language switched",
     "语言 · 重启后生效": "Language · takes effect after restart",
     "语言已保存 · 重启客户端后生效": "Language saved · restart the client to apply",
     "拖动调整上方图表高度": "Drag to resize the chart above",
