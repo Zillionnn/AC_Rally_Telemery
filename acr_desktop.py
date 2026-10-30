@@ -3628,8 +3628,39 @@ class TelemetryWindow(QMainWindow):
             line.setPos(self._cursor_x)
         self.speed_dot.setData([self._cursor_x], [float(traces["speed"][index])])
         self._update_readout(index)
+        if self._video_follows_cursor():
+            self._ensure_cursor_visible()
         if self.track_map is not None:
             self.track_map.set_cursor(self._cursor_x)
+
+    def _video_follows_cursor(self) -> bool:
+        player = self._player
+        return bool(
+            player is not None
+            and player.state_name == "playing"
+            and self.video_follow is not None
+            and self.video_follow.isChecked()
+        )
+
+    def _ensure_cursor_visible(self) -> None:
+        """Pan the charts with the cursor while the replay is playing.
+
+        Without this the cursor walks out of a zoomed window and the chart
+        shows nothing that matches what is playing.
+        """
+        if self.current is None:
+            return
+        x0, x1 = self.speed_plot.viewRange()[0]
+        width = float(x1 - x0)
+        if width <= 1.0:
+            return
+        x = float(self._cursor_x)
+        if x0 + width * 0.12 <= x <= x1 - width * 0.12:
+            return
+        max_x = float(self.current.traces["x"][-1])
+        low = x - width * 0.25
+        low = max(0.0, min(low, max(0.0, max_x - width * 0.5)))
+        self.speed_plot.setXRange(low, low + width, padding=0)
 
     def _update_readout(self, index: int) -> None:
         traces = self.current.traces
