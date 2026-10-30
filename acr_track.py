@@ -80,7 +80,10 @@ def build_path(run) -> TrackPath | None:
     dt[0] = 0.0
     dt = np.clip(dt, 0.0, 0.5)
     east = np.concatenate([[0.0], np.cumsum(vx[1:] * dt[1:])])
-    north = np.concatenate([[0.0], np.cumsum(vz[1:] * dt[1:])])
+    # the world frame here has +Y up, so a top-down view that keeps the driver's
+    # handedness must use -Z as its "up the screen" axis; with +Z the map is
+    # mirrored and every right-hand corner reads as a left-hand one
+    north = np.concatenate([[0.0], -np.cumsum(vz[1:] * dt[1:])])
     up = np.concatenate([[0.0], np.cumsum(vy[1:] * dt[1:])])
     if float(np.hypot(np.ptp(east), np.ptp(north))) < 20.0:
         return None
