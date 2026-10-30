@@ -45,6 +45,19 @@ python -m venv .build_venv
 
 Nuitka 的 `--enable-plugin=pyside6` 与 QtOpenGL/QtSvg 的 include 已固化在脚本里；不要删除输出目录，缓存能让后续构建只重编改动的模块。
 
+### 安装包（推荐交付）
+
+需要 [Inno Setup 6+](https://jrsoftware.org/isinfo.php)，用 `ISCC.exe` 编译：
+
+```bash
+"ISCC.exe" acr_installer.iss                              # → dist\ACR Telemetry Setup <版本>.exe
+"ISCC.exe" "/DMyAppVersion=0.3.16" acr_installer.iss      # 显式指定版本号
+```
+
+安装包按用户安装到 `%LOCALAPPDATA%\Programs\ACR Telemetry`（不需要管理员权限），创建开始菜单和桌面快捷方式，并在安装目录下建 `telemetry\` 作为数据目录。
+
+> 注意：经浏览器、聊天工具或从压缩包转存的 exe 会被 Windows 打上 `Zone.Identifier`（"来自 Internet"）标记，双击会弹"打开文件 - 安全警告 / 无法验证发布者"。构建产物本身没有这个标记；遇到时右键 → 属性 → 勾选"解除锁定"，或执行 `Unblock-File .\ACR Telemetry.exe`。
+
 ## 自检
 
 ```bash
