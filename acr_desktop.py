@@ -1946,12 +1946,13 @@ class TelemetryWindow(QMainWindow):
             fill=pg.mkBrush(239, 68, 68, 32),
             legend=input_legend,
         )
-        # reference traces are neutral and separated by line pattern: in green
-        # and red they vanished into the filled current traces
+        # reference traces use cool colours that the current traces never use,
+        # plus a different pattern: green/red ones vanished into the fills and
+        # two white ones could not be told apart
         self._series["gas_ref"] = self._add_series(
             self.input_plot,
             "油门 参考",
-            (226, 232, 240, 200),
+            C["blue"],
             width=1.3,
             style=Qt.PenStyle.DashLine,
             legend=input_legend,
@@ -1959,9 +1960,9 @@ class TelemetryWindow(QMainWindow):
         self._series["brake_ref"] = self._add_series(
             self.input_plot,
             "刹车 参考",
-            (226, 232, 240, 200),
+            C["purple"],
             width=1.3,
-            style=Qt.PenStyle.DotLine,
+            style=Qt.PenStyle.DashDotLine,
             legend=input_legend,
         )
 
