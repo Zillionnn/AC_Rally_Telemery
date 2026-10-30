@@ -32,6 +32,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QFileDialog,
     QFrame,
+    QGraphicsItem,
     QGridLayout,
     QHBoxLayout,
     QHeaderView,
@@ -471,9 +472,21 @@ class TrackMap(pg.PlotWidget):
         self._cursor_distance = 0.0
         self._kinds = np.asarray([], dtype=np.int8)
 
-        self.base = pg.PlotDataItem(pen=pg.mkPen(C["dim"], width=2.2))
-        self.loss = pg.PlotDataItem(pen=pg.mkPen(C["red"], width=5.0))
-        self.gain = pg.PlotDataItem(pen=pg.mkPen(C["green"], width=5.0))
+        # connect="finite" so the NaN gap markers do not poison the item's
+        # bounding rect (a NaN rect collapses the map's auto-range and the
+        # track is then drawn outside the visible view)
+        self.base = pg.PlotDataItem(
+            pen=pg.mkPen(C["dim"], width=2.2), antialias=False, connect="finite")
+        self.loss = pg.PlotDataItem(
+            pen=pg.mkPen(C["red"], width=5.0), antialias=False, connect="finite")
+        self.gain = pg.PlotDataItem(
+            pen=pg.mkPen(C["green"], width=5.0), antialias=False, connect="finite")
+        # the track never moves, so cache it: otherwise every cursor move
+        # re-strokes the whole path (~10ms). The cache lives on the inner
+        # PlotCurveItem, not the PlotDataItem wrapper.
+        for item in (self.base, self.loss, self.gain):
+            item.curve.setCacheMode(
+                QGraphicsItem.CacheMode.DeviceCoordinateCache)
         self.notes = pg.ScatterPlotItem(pen=pg.mkPen(None), symbol="o", size=5)
         self.incidents = pg.ScatterPlotItem(
             pen=pg.mkPen(C["bg"], width=1), symbol="t", size=9
@@ -601,6 +614,23 @@ class TrackMap(pg.PlotWidget):
         return np.clip(np.searchsorted(self.path.dist, np.asarray(distances)),
                        0, len(self._dx) - 1)
 
+    def _apply_bounds(self) -> None:
+        """Frame the track from its own extents.
+
+        Auto-range is not usable here: while the panel is still empty the
+        aspect-locked view collapses to a ~1e-155 range, and from then on the
+        pixel padding math in every item's boundingRect returns NaN, so the map
+        never recovers once data arrives.
+        """
+        if self._dx is None or not len(self._dx):
+            return
+        self.getPlotItem().vb.setRange(
+            xRange=(float(self._dx.min()), float(self._dx.max())),
+            yRange=(float(self._dy.min()), float(self._dy.max())),
+            padding=0.08,
+            disableAutoRange=True,
+        )
+
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
         # PlotWidget.__getattr__ traps unknown names, and Qt resizes us during
@@ -608,7 +638,7 @@ class TrackMap(pg.PlotWidget):
         if getattr(self, "path", None) is not None:
             self._reorient()
             self._render()
-            self.getPlotItem().vb.enableAutoRange()
+            self._apply_bounds()
 
     # --- inputs -----------------------------------------------------------
     def set_path(self, path: acr_track.TrackPath | None) -> None:
@@ -621,7 +651,7 @@ class TrackMap(pg.PlotWidget):
         self._kinds = np.zeros(len(path.dist), dtype=np.int8)
         self._reorient()
         self._render()
-        self.getPlotItem().vb.enableAutoRange()
+        self._apply_bounds()
 
     def set_delta(self, grid, delta) -> None:
         if self.path is None:
@@ -756,6 +786,25 @@ class TelemetryWindow(QMainWindow):
         self._video_sync_guard = False
         self._video_offset_override = {}
         self._map_run_id = None
+        # cursor/axis updates are coalesced to ~30Hz: every mouse move otherwise
+        # repaints all six plots and the map, which costs ~60ms per event
+        self._cursor_timer = QTimer(self)
+        self._cursor_timer.setSingleShot(True)
+        self._cursor_timer.setInterval(33)
+        self._cursor_timer.timeout.connect(self._flush_cursor_update)
+        self._pending_cursor = None
+        self._axis_timer = QTimer(self)
+        self._axis_timer.setSingleShot(True)
+        self._axis_timer.setInterval(33)
+        self._axis_timer.timeout.connect(self._flush_axis_sync)
+        self._pending_axis = None
+        # grid lines make range changes ~2.5x more expensive to repaint, so
+        # they are hidden while the user pans/zooms and restored when idle
+        self._grid_timer = QTimer(self)
+        self._grid_timer.setSingleShot(True)
+        self._grid_timer.setInterval(220)
+        self._grid_timer.timeout.connect(self._restore_chart_grid)
+        self._grid_hidden = False
 
         pg.setConfigOptions(background=C["bg"], foreground=C["muted"], antialias=True)
         self.setWindowTitle("ACR Telemetry Studio")
@@ -1182,7 +1231,8 @@ class TelemetryWindow(QMainWindow):
             return
         distances = np.asarray([rel for _note, rel in pairs], dtype=float)
         limit = float(self.track_map.path.dist[-1])
-        keep = (distances >= 0.0) & (distances <= limit)
+        keep = (np.isfinite(distances)
+                & (distances >= 0.0) & (distances <= limit))
         colors = [
             QBrush(QColor(self._pacenote_color(note)))
             for (note, _rel), ok in zip(pairs, keep)
@@ -2070,12 +2120,31 @@ class TelemetryWindow(QMainWindow):
         self._chart_viewports[axis.viewport()] = (self.speed_plot, axis)
         return axis
 
+    def _set_chart_grid(self, visible: bool) -> None:
+        for plot in getattr(self, "plots", ()):
+            plot.showGrid(x=visible, y=visible, alpha=0.16)
+
+    def _restore_chart_grid(self) -> None:
+        if not self._grid_hidden:
+            return
+        self._grid_hidden = False
+        self._set_chart_grid(True)
+
     def _sync_fixed_axis(self, _view, x_range) -> None:
-        self.axis_plot.setXRange(
-            float(x_range[0]),
-            float(x_range[1]),
-            padding=0,
-        )
+        if not self._grid_hidden:
+            self._grid_hidden = True
+            self._set_chart_grid(False)
+        self._grid_timer.start()
+        self._pending_axis = (float(x_range[0]), float(x_range[1]))
+        if not self._axis_timer.isActive():
+            self._axis_timer.start()
+
+    def _flush_axis_sync(self) -> None:
+        pending = self._pending_axis
+        self._pending_axis = None
+        if pending is None:
+            return
+        self.axis_plot.setXRange(pending[0], pending[1], padding=0)
 
     def _sync_axis_width(self, *_args) -> None:
         if not self._chart_widgets:
@@ -2188,16 +2257,21 @@ class TelemetryWindow(QMainWindow):
             [],
             [],
             pen=pen,
+            antialias=False,
             fillLevel=0 if fill is not None else None,
             brush=fill,
             connect="finite",
         )
-        item.setDownsampling(auto=True, method="peak")
-        item.setClipToView(True)
         if view is None:
             plot.addItem(item)
         else:
             view.addItem(item)
+        # after addItem: PlotItem.addItem() overwrites these with its defaults
+        item.setDownsampling(auto=True, method="peak")
+        item.setClipToView(True)
+        # lets a static view repaint the curve from a cached pixmap; big win
+        # for cursor moves, which would otherwise re-stroke every curve
+        item.curve.setCacheMode(QGraphicsItem.CacheMode.DeviceCoordinateCache)
         if legend is not None:
             legend.addItem(item, name)
         return item
@@ -2686,7 +2760,9 @@ class TelemetryWindow(QMainWindow):
         if not 0.0 <= distance <= max_x:
             return
         self._video_sync_guard = True
-        self._set_cursor_x(distance)
+        self._pending_cursor = (distance, None)
+        if not self._cursor_timer.isActive():
+            self._cursor_timer.start()
         self._video_sync_guard = False
 
     def _on_video_state(self, state: str) -> None:
@@ -2926,6 +3002,10 @@ class TelemetryWindow(QMainWindow):
             return
         self.current = current
         self.reference = reference
+        self._cursor_timer.stop()
+        self._axis_timer.stop()
+        self._pending_cursor = None
+        self._pending_axis = None
         self.compare = acr_data.compare_runs(current, reference)
         self._update_summary()
         self._update_analysis()
@@ -3326,7 +3406,19 @@ class TelemetryWindow(QMainWindow):
         position = event[0] if isinstance(event, (tuple, list)) else event
         x = float(plot.vb.mapSceneToView(position).x())
         max_x = float(self.current.traces["x"][-1]) if len(self.current.traces["x"]) else 0.0
-        self._set_cursor_x(min(max(x, 0.0), max_x))
+        self._pending_cursor = (min(max(x, 0.0), max_x), plot)
+        if not self._cursor_timer.isActive():
+            self._cursor_timer.start()
+
+    def _flush_cursor_update(self) -> None:
+        pending = self._pending_cursor
+        self._pending_cursor = None
+        if pending is None or self.current is None:
+            return
+        x, plot = pending
+        self._set_cursor_x(x)
+        if plot is None:
+            return
         self._follow_pacenote(x)
         self._update_pacenote_hover(plot, x)
 
