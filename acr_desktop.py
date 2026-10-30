@@ -2232,19 +2232,23 @@ class TelemetryWindow(QMainWindow):
             self._chart_scale[name] = (float(lo), float(hi), (float(hi) - float(lo)) / height)
 
     def _apply_chart_scales(self) -> None:
+        """Keep units-per-pixel constant, whatever the chart box is doing.
+
+        Shrinking clips the trace (top and bottom equally around the current
+        centre); growing keeps the same slope and shows blank space instead of
+        stretching the curve to fill the box.
+        """
         for name, view, widget in self._scale_targets():
             saved = self._chart_scale.get(name)
             if saved is None:
                 continue
             lo, hi, upp = saved
-            span = min(hi - lo, upp * max(1.0, float(widget.height())))
-            # clip around wherever the view is centred, so shrinking never
-            # throws away only the top or only the bottom of the trace
+            span = upp * max(1.0, float(widget.height()))
             current = view.viewRange()[1]
             centre = (float(current[0]) + float(current[1])) / 2.0
-            bottom = min(max(centre - span / 2.0, lo), hi - span)
-            view.setLimits(yMin=lo, yMax=hi)
-            view.setYRange(bottom, bottom + span, padding=0)
+            if abs(centre - (lo + hi) / 2.0) > (hi - lo):
+                centre = (lo + hi) / 2.0
+            view.setYRange(centre - span / 2.0, centre + span / 2.0, padding=0)
 
     def _layout_path(self) -> Path:
         return self.directory / "ui_layout.json"
