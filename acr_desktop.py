@@ -886,6 +886,7 @@ class TelemetryWindow(QMainWindow):
         split.addWidget(chart_card)
         split.addWidget(self._build_replay_panel())
         split.setSizes([400, 1120, 420])
+        split.setOpaqueResize(False)
         split.setStretchFactor(0, 0)
         split.setStretchFactor(1, 1)
         split.setStretchFactor(2, 0)
@@ -1038,6 +1039,22 @@ class TelemetryWindow(QMainWindow):
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(10, 8, 10, 8)
         layout.setSpacing(6)
+        self.replay_split = QSplitter(Qt.Orientation.Vertical)
+        self.replay_split.setChildrenCollapsible(False)
+        # one relayout at the end of the drag: live resizing repainted the
+        # whole replay panel on every mouse move and made it stutter
+        self.replay_split.setOpaqueResize(False)
+        self._replay_split_save = QTimer(self)
+        self._replay_split_save.setSingleShot(True)
+        self._replay_split_save.setInterval(400)
+        self._replay_split_save.timeout.connect(
+            lambda: self._save_ui_state({
+                "replay_split": self.replay_split.sizes()}))
+        self.replay_split.splitterMoved.connect(self._on_replay_split_moved)
+        video_block = QFrame()
+        vbox = QVBoxLayout(video_block)
+        vbox.setContentsMargins(6, 4, 6, 4)
+        vbox.setSpacing(4)
 
         head = QHBoxLayout()
         head.setSpacing(6)
@@ -1048,7 +1065,7 @@ class TelemetryWindow(QMainWindow):
         self.replay_state = QLabel(tr("无录像"))
         self.replay_state.setObjectName("cardHint")
         head.addWidget(self.replay_state)
-        layout.addLayout(head)
+        vbox.addLayout(head)
 
         target_row = QHBoxLayout()
         target_row.setSpacing(6)
@@ -1067,7 +1084,7 @@ class TelemetryWindow(QMainWindow):
         refresh_target = QPushButton(tr("刷新"))
         refresh_target.clicked.connect(self._populate_video_targets)
         target_row.addWidget(refresh_target)
-        layout.addLayout(target_row)
+        vbox.addLayout(target_row)
 
         self.video_view = QLabel()
         self.video_view.setObjectName("videoView")
@@ -1077,7 +1094,7 @@ class TelemetryWindow(QMainWindow):
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
         )
         self.video_view.setText(tr("尚无录像\n开启自动录像后按赛段生成"))
-        layout.addWidget(self.video_view, 2)
+        vbox.addWidget(self.video_view, 1)
 
         transport = QHBoxLayout()
         transport.setSpacing(4)
@@ -1100,7 +1117,7 @@ class TelemetryWindow(QMainWindow):
         self.video_follow.setToolTip(tr("播放时图表光标和地图跟着视频走"))
         self.video_follow.setChecked(True)
         transport.addWidget(self.video_follow)
-        layout.addLayout(transport)
+        vbox.addLayout(transport)
 
         levels = QHBoxLayout()
         levels.setSpacing(4)
@@ -1140,8 +1157,12 @@ class TelemetryWindow(QMainWindow):
         self.quality_combo.setToolTip(tr("录像分辨率与码率（下一段赛段生效）"))
         self.quality_combo.currentIndexChanged.connect(self._on_quality_changed)
         levels.addWidget(self.quality_combo)
-        layout.addLayout(levels)
+        vbox.addLayout(levels)
 
+        map_block = QFrame()
+        mbox = QVBoxLayout(map_block)
+        mbox.setContentsMargins(6, 4, 6, 4)
+        mbox.setSpacing(4)
         map_head = QHBoxLayout()
         map_head.setSpacing(6)
         map_title = QLabel(tr("赛道地图"))
@@ -1151,13 +1172,17 @@ class TelemetryWindow(QMainWindow):
         self.map_hint = QLabel(tr("红=比参考慢 绿=更快 · 每100m"))
         self.map_hint.setObjectName("cardHint")
         map_head.addWidget(self.map_hint)
-        layout.addLayout(map_head)
+        mbox.addLayout(map_head)
 
         self.track_map = TrackMap()
         self.track_map.setMinimumHeight(200)
         self.track_map.distance_clicked.connect(self._on_map_clicked)
         self.track_map.distance_hovered.connect(self._on_map_hovered)
-        layout.addWidget(self.track_map, 3)
+        mbox.addWidget(self.track_map, 1)
+
+        self.replay_split.addWidget(video_block)
+        self.replay_split.addWidget(map_block)
+        layout.addWidget(self.replay_split, 1)
 
         self.replay_panel = panel
         self._populate_video_targets()
@@ -1171,6 +1196,12 @@ class TelemetryWindow(QMainWindow):
             self.replay_panel_toggle.setChecked(visible)
         if visible:
             self._resize_panel(self._panel_width())
+            sizes = state.get("replay_split")
+            if isinstance(sizes, list) and len(sizes) == 2:
+                self.replay_split.setSizes([int(sizes[0]), int(sizes[1])])
+
+    def _on_replay_split_moved(self, _pos: int, _index: int) -> None:
+        self._replay_split_save.start()
 
     def _panel_width(self) -> int:
         return int(self._load_ui_state().get("replay_width") or 0) or 420
