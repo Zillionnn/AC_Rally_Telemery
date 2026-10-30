@@ -73,13 +73,13 @@ copy /y "build_exe\ACR Telemetry.exe" "dist\ACR Telemetry.exe"
 | Inno Setup 7（x64） | `C:\Program Files\Inno Setup 7\ISCC.exe` |
 | Inno Setup 6 | `C:\Program Files (x86)\Inno Setup 6\ISCC.exe` |
 
-版本号与 `acr_version.py` 保持一致（当前 0.3.18）：
+版本号与 `acr_version.py` 保持一致（当前 0.3.19）：
 
 ```bash
-"C:\Program Files\Inno Setup 7\ISCC.exe" /DMyAppVersion=0.3.18 acr_installer.iss
+"C:\Program Files\Inno Setup 7\ISCC.exe" /DMyAppVersion=0.3.19 acr_installer.iss
 ```
 
-产物：`dist\ACR Telemetry Setup 0.3.18.exe`，中文/English 安装向导（中文翻译在 `installer\ChineseSimplified.isl`，
+产物：`dist\ACR Telemetry Setup 0.3.19.exe`，中文/English 安装向导（中文翻译在 `installer\ChineseSimplified.isl`，
 按系统语言自动选择）。安装包按用户装到 `%LOCALAPPDATA%\Programs\ACR Telemetry`
 （不需要管理员权限），创建开始菜单和桌面快捷方式，并在安装目录下建 `telemetry\` 作为数据目录；
 卸载走“设置 → 应用”或安装目录里的 `unins000.exe`，升级时直接运行新安装包覆盖安装即可。

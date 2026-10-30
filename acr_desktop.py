@@ -3781,9 +3781,11 @@ class TelemetryWindow(QMainWindow):
             return
         x, plot = pending
         self._set_cursor_x(x)
+        # Playback drives the cursor with plot=None; the pacenotes still have
+        # to follow it, not only when the mouse moves over a chart.
+        self._follow_pacenote(x)
         if plot is None:
             return
-        self._follow_pacenote(x)
         self._update_pacenote_hover(plot, x)
 
     def _set_cursor_x(self, x: float) -> None:
