@@ -758,6 +758,8 @@ class TelemetryWindow(QMainWindow):
         self._chart_heights_from_file = False
         self._chart_fitted = False
         self._chart_scale = {}
+        self._scale_watched = set()
+        self._applying_scale = False
         self._series = {}
         self._right_views = {}
         self.readout = {}
@@ -2230,6 +2232,29 @@ class TelemetryWindow(QMainWindow):
             lo, hi = view.viewRange()[1]
             height = max(1.0, float(widget.height()))
             self._chart_scale[name] = (float(lo), float(hi), (float(hi) - float(lo)) / height)
+            self._watch_scale(name, view)
+
+    def _watch_scale(self, name: str, view) -> None:
+        """Follow a manual Y zoom: the user's own scale becomes the reference."""
+        if name in self._scale_watched:
+            return
+        self._scale_watched.add(name)
+        box = getattr(view, "vb", view)
+        box.sigYRangeChanged.connect(
+            lambda _box, span, key=name: self._on_user_y_range(key, span))
+
+    def _on_user_y_range(self, name: str, span) -> None:
+        if self._applying_scale or name not in self._chart_scale:
+            return
+        lo, _hi, _upp = self._chart_scale[name]
+        widget = dict(
+            (key, holder) for key, _view, holder in self._scale_targets()).get(name)
+        extent = float(span[1]) - float(span[0])
+        if widget is None or extent <= 1e-9:
+            return
+        # keep the data's full extent, but let their zoom set the scale
+        self._chart_scale[name] = (lo, self._chart_scale[name][1],
+                                   extent / max(1.0, float(widget.height())))
 
     def _apply_chart_scales(self) -> None:
         """Keep units-per-pixel constant, whatever the chart box is doing.
@@ -2238,17 +2263,21 @@ class TelemetryWindow(QMainWindow):
         centre); growing keeps the same slope and shows blank space instead of
         stretching the curve to fill the box.
         """
-        for name, view, widget in self._scale_targets():
-            saved = self._chart_scale.get(name)
-            if saved is None:
-                continue
-            lo, hi, upp = saved
-            span = upp * max(1.0, float(widget.height()))
-            current = view.viewRange()[1]
-            centre = (float(current[0]) + float(current[1])) / 2.0
-            if abs(centre - (lo + hi) / 2.0) > (hi - lo):
-                centre = (lo + hi) / 2.0
-            view.setYRange(centre - span / 2.0, centre + span / 2.0, padding=0)
+        self._applying_scale = True
+        try:
+            for name, view, widget in self._scale_targets():
+                saved = self._chart_scale.get(name)
+                if saved is None:
+                    continue
+                lo, hi, upp = saved
+                span = upp * max(1.0, float(widget.height()))
+                current = view.viewRange()[1]
+                centre = (float(current[0]) + float(current[1])) / 2.0
+                if abs(centre - (lo + hi) / 2.0) > (hi - lo):
+                    centre = (lo + hi) / 2.0
+                view.setYRange(centre - span / 2.0, centre + span / 2.0, padding=0)
+        finally:
+            self._applying_scale = False
 
     def _layout_path(self) -> Path:
         return self.directory / "ui_layout.json"
