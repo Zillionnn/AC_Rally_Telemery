@@ -1,64 +1,30 @@
-/sf6_ai_env/
-# YOLO训练相关忽略文件
-yolo_training/datasets/
-yolo_training/runs/
-yolo_training/weights/
-yolo_training/models/
-yolo_training/temp_*.pkl
-yolo_training/converted_training_data_*.pkl
-/handle_LabelImg_UI/0_yolo_ui_reader/dataset
-/handle_LabelImg_UI/0_yolo_ui_reader/runs/
-/handle_LabelImg_UI/0_yolo_ui_reader/runs_ui/
-/handle_LabelImg_UI/0_yolo_ui_reader/output/
-
-/handle_LabelImg_UI/1_sf6_digits/output/
-/handle_LabelImg_UI/1_sf6_digits/dataset/
-
-
-/handle_LabelImg_UI/output
-/handle_LabelImg_UI/labels
-/handle_LabelImg_UI/frames
-/handle_LabelImg_UI/csv
-
-/train_ai/frames
-
-# 训练输出
-runs/
-weights/
-models/
-
-# 临时文件
-*.tmp
-*.temp
-*.log
-
-# 数据集
-*.dataset
-*.cache
-
-# 模型检查点
-*.pt.bak
-*.pth.bak
-checkpoint/
-snapshots/
-
-# 图像处理
-__pycache__/
-*.pyc
-*.pyo
-
-
-/train_ai/checkpoints
-
-# --- ACR Telemetry（本地环境 / 构建产物 / 数据，不进仓库）---
+# 本地环境
 .build_venv/
 .spike_venv/
+
+# 构建产物
 build_check/
 build_exe/
 *.onefile-build/
 qt_min_build/
 dist/
+
+# 运行时数据：CSV、录像、缓存、界面布局
 telemetry/
 .acr_cache/
+
+# 从游戏资源里抽出来的中间文件
 DT_Pacenote*.dat
-rust/target/
+
+# Rust 重写在独立分支，master 不带它的构建树
+rust/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# 临时文件
+*.tmp
+*.temp
+*.log
