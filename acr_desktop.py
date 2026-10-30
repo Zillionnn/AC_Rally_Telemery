@@ -757,6 +757,7 @@ class TelemetryWindow(QMainWindow):
         self._mouse_proxies = []
         self._chart_heights_from_file = False
         self._chart_fitted = False
+        self._chart_scale = {}
         self._series = {}
         self._right_views = {}
         self.readout = {}
@@ -2202,8 +2203,48 @@ class TelemetryWindow(QMainWindow):
         )
         self.chart_content.setFixedHeight(total)
         QTimer.singleShot(0, self._sync_axis_width)
+        QTimer.singleShot(0, self._apply_chart_scales)
         if save:
             self._save_chart_layout()
+
+    # --- vertical scale ---------------------------------------------------
+    def _scale_targets(self) -> list:
+        """(key, view, widget) for every Y axis that keeps a fixed scale."""
+        names = ("delta", "speed", "input", "gear", "steer", "tyre")
+        targets = [(name, plot, plot.getViewWidget())
+                   for name, plot in zip(names, self.plots)]
+        owners = {"rpm": self.gear_plot, "g": self.g_plot, "psi": self.tire_plot}
+        for key, view in self._right_views.items():
+            owner = owners.get(key)
+            if owner is not None:
+                targets.append((f"{key}_right", view, owner.getViewWidget()))
+        return targets
+
+    def _remember_scales(self) -> None:
+        """Record each axis' full extent and the units-per-pixel it was fit to.
+
+        The chart then keeps that scale: shrinking a chart clips its bottom
+        instead of squeezing the whole trace into fewer pixels.
+        """
+        for name, view, widget in self._scale_targets():
+            lo, hi = view.viewRange()[1]
+            height = max(1.0, float(widget.height()))
+            self._chart_scale[name] = (float(lo), float(hi), (float(hi) - float(lo)) / height)
+
+    def _apply_chart_scales(self) -> None:
+        for name, view, widget in self._scale_targets():
+            saved = self._chart_scale.get(name)
+            if saved is None:
+                continue
+            lo, hi, upp = saved
+            span = min(hi - lo, upp * max(1.0, float(widget.height())))
+            # clip around wherever the view is centred, so shrinking never
+            # throws away only the top or only the bottom of the trace
+            current = view.viewRange()[1]
+            centre = (float(current[0]) + float(current[1])) / 2.0
+            bottom = min(max(centre - span / 2.0, lo), hi - span)
+            view.setLimits(yMin=lo, yMax=hi)
+            view.setYRange(bottom, bottom + span, padding=0)
 
     def _layout_path(self) -> Path:
         return self.directory / "ui_layout.json"
@@ -3276,6 +3317,7 @@ class TelemetryWindow(QMainWindow):
         press_arrays = [ct["press"][i] for i in range(4)]
         press_lo, press_hi = self._limits(*press_arrays, fallback=(20, 40), pad=0.08)
         self._right_views["psi"].setYRange(press_lo, press_hi, padding=0)
+        self._remember_scales()
 
         for plot, line in self._incident_lines:
             plot.removeItem(line)
