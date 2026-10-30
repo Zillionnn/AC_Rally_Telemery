@@ -10,6 +10,7 @@ from PySide6.QtCore import QThread, Signal
 
 import acr_data
 import acr_telemetry
+from acr_i18n import tr
 
 
 class AutoRecorder(QThread):

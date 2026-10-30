@@ -18,6 +18,8 @@ from typing import Any
 
 import numpy as np
 
+from acr_i18n import tr
+
 DEFAULT_PATTERNS = ("Assetto Corsa Rally", "AC Rally", "Assettocorsa")
 AUDIO_CHUNK = 1024
 

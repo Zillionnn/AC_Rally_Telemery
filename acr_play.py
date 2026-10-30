@@ -17,6 +17,8 @@ import numpy as np
 from PySide6.QtCore import QObject, QThread, QTimer, Signal
 from PySide6.QtGui import QImage
 
+from acr_i18n import tr
+
 FRAME_QUEUE = 6
 
 
