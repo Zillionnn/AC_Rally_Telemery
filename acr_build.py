@@ -12,6 +12,7 @@ Usage:
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
@@ -74,7 +75,16 @@ def run(mode: str, output_dir: str,
         cmd.append(f"--output-filename={output_filename}")
     cmd += data_args() + COMMON
     print(" ".join(cmd[:8]), "...", flush=True)
-    return subprocess.call(cmd, cwd=str(ROOT))
+    # this machine's %LOCALAPPDATA% Nuitka cache and %TEMP% are not writable
+    # for the build process, so both live inside the project instead
+    cache = ROOT / ".nuitka_cache"
+    temp = ROOT / ".build_tmp"
+    cache.mkdir(exist_ok=True)
+    temp.mkdir(exist_ok=True)
+    env = os.environ.copy()
+    env["NUITKA_CACHE_DIR"] = str(cache)
+    env["TMP"] = env["TEMP"] = str(temp)
+    return subprocess.call(cmd, cwd=str(ROOT), env=env)
 
 
 REQUIRED = (

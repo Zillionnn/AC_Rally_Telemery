@@ -19,6 +19,10 @@ DT_Pacenote*.dat
 # Rust 重写在独立分支，master 不带它的构建树
 rust/
 
+# 构建缓存（本机 %LOCALAPPDATA% 不可写，改放仓库内）
+.nuitka_cache/
+.build_tmp/
+
 # Python
 __pycache__/
 *.pyc
