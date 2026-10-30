@@ -49,6 +49,7 @@ from PySide6.QtWidgets import (
     QSizePolicy,
     QSlider,
     QSplitter,
+    QSplitterHandle,
     QSystemTrayIcon,
     QTabWidget,
     QTableWidget,
@@ -363,8 +364,12 @@ QScrollBar::handle:horizontal {
     border-radius: 4px;
 }
 QSplitter::handle {
-    background: #070b12;
+    background: #1b2537;
     width: 8px;
+    height: 8px;
+}
+QSplitter::handle:hover {
+    background: #2b3a52;
 }
 QScrollArea#chartScroll, QWidget#chartContent {
     background: #070b12;
@@ -391,6 +396,67 @@ QToolTip {
     border: 1px solid #334155;
 }
 """
+
+
+class GripHandle(QSplitterHandle):
+    """Splitter handle with the same little bar as the chart height handles."""
+
+    drag_started = Signal()
+    drag_finished = Signal()
+
+    def __init__(self, orientation, parent) -> None:
+        super().__init__(orientation, parent)
+        self._dragging = False
+
+    def paintEvent(self, event) -> None:
+        super().paintEvent(event)
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        color = "#e2e8f0" if self.underMouse() else "#94a3b8"
+        painter.setPen(QPen(QColor(color), 2))
+        x = self.width() // 2
+        y = self.height() // 2
+        if self.orientation() == Qt.Orientation.Vertical:
+            painter.drawLine(x - 28, y, x + 28, y)
+        else:
+            painter.drawLine(x, y - 28, x, y + 28)
+
+    def enterEvent(self, event) -> None:
+        self.update()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event) -> None:
+        self.update()
+        super().leaveEvent(event)
+
+    def mouseMoveEvent(self, event) -> None:
+        # only a real drag freezes the charts; a plain click must not blank them
+        if not self._dragging and event.buttons() & Qt.MouseButton.LeftButton:
+            self._dragging = True
+            self.drag_started.emit()
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event) -> None:
+        super().mouseReleaseEvent(event)
+        if self._dragging:
+            self._dragging = False
+            self.drag_finished.emit()
+
+    def event(self, event) -> bool:
+        # never leave the charts frozen if the grab is lost mid-drag
+        if event.type() == QEvent.Type.UngrabMouse and self._dragging:
+            self._dragging = False
+            self.drag_finished.emit()
+        return super().event(event)
+
+
+class GripSplitter(QSplitter):
+    def __init__(self, orientation) -> None:
+        super().__init__(orientation)
+        self.setHandleWidth(10)
+
+    def createHandle(self) -> QSplitterHandle:
+        return GripHandle(self.orientation(), self)
 
 
 class ChartResizeHandle(QFrame):
@@ -644,9 +710,15 @@ class TrackMap(pg.PlotWidget):
         # PlotWidget.__getattr__ traps unknown names, and Qt resizes us during
         # super().__init__() before our own fields exist.
         if getattr(self, "path", None) is not None:
+            # only a width/height flip needs the path re-stroked; otherwise the
+            # data is unchanged and re-setting it on every splitter move was the
+            # heaviest part of dragging the replay panel
+            angle = self._angle
             self._reorient()
-            self._render()
-            self._apply_bounds()
+            if angle != self._angle or self._dx is None:
+                self._render()
+            else:
+                self._apply_bounds()
 
     # --- inputs -----------------------------------------------------------
     def set_path(self, path: acr_track.TrackPath | None) -> None:
@@ -804,6 +876,10 @@ class TelemetryWindow(QMainWindow):
         self._map_run_id = None
         # cursor/axis updates are coalesced to ~30Hz: every mouse move otherwise
         # repaints all six plots and the map, which costs ~60ms per event
+        self._video_resize_timer = QTimer(self)
+        self._video_resize_timer.setSingleShot(True)
+        self._video_resize_timer.setInterval(150)
+        self._video_resize_timer.timeout.connect(self._paint_video_frame)
         self._cursor_timer = QTimer(self)
         self._cursor_timer.setSingleShot(True)
         self._cursor_timer.setInterval(33)
@@ -867,11 +943,12 @@ class TelemetryWindow(QMainWindow):
         root.addWidget(self._build_live_bar())
         root.addWidget(self._build_readout())
 
-        split = QSplitter(Qt.Orientation.Horizontal)
+        split = GripSplitter(Qt.Orientation.Horizontal)
         split.setChildrenCollapsible(False)
         split.addWidget(self._build_sidebar())
         chart_card = QFrame()
         chart_card.setObjectName("chartCard")
+        chart_card.setMinimumWidth(320)
         chart_layout = QVBoxLayout(chart_card)
         chart_layout.setContentsMargins(10, 8, 10, 8)
         chart_layout.setSpacing(2)
@@ -886,11 +963,17 @@ class TelemetryWindow(QMainWindow):
         split.addWidget(chart_card)
         split.addWidget(self._build_replay_panel())
         split.setSizes([400, 1120, 420])
-        split.setOpaqueResize(False)
         split.setStretchFactor(0, 0)
         split.setStretchFactor(1, 1)
         split.setStretchFactor(2, 0)
         self.main_split = split
+        # both dividers resize the six pyqtgraph plots; freeze the charts for
+        # the duration of a drag and repaint them once on release
+        for index in (1, 2):
+            handle = split.handle(index)
+            handle.drag_started.connect(self._begin_panel_drag)
+            handle.drag_finished.connect(self._end_panel_drag)
+        split.splitterMoved.connect(self._on_main_split_moved)
         self._apply_panel_state()
         root.addWidget(split, 1)
 
@@ -1039,11 +1122,8 @@ class TelemetryWindow(QMainWindow):
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(10, 8, 10, 8)
         layout.setSpacing(6)
-        self.replay_split = QSplitter(Qt.Orientation.Vertical)
+        self.replay_split = GripSplitter(Qt.Orientation.Vertical)
         self.replay_split.setChildrenCollapsible(False)
-        # one relayout at the end of the drag: live resizing repainted the
-        # whole replay panel on every mouse move and made it stutter
-        self.replay_split.setOpaqueResize(False)
         self._replay_split_save = QTimer(self)
         self._replay_split_save.setSingleShot(True)
         self._replay_split_save.setInterval(400)
@@ -1073,6 +1153,11 @@ class TelemetryWindow(QMainWindow):
         target_label.setObjectName("cardHint")
         target_row.addWidget(target_label)
         self.video_target_combo = QComboBox()
+        # window titles are long; without this the combo's size hint made the
+        # whole replay panel unable to shrink below ~700px
+        self.video_target_combo.setSizePolicy(
+            QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred
+        )
         self.video_target_combo.setToolTip(
             tr("自动匹配会找 AC Rally 窗口；如果游戏窗口名不含这些字，\n"
                "从列表里选它。列表按打开面板时刷新。")
@@ -1090,8 +1175,12 @@ class TelemetryWindow(QMainWindow):
         self.video_view.setObjectName("videoView")
         self.video_view.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.video_view.setMinimumHeight(96)
+        # Ignored, not Expanding: a QLabel reports the last painted pixmap size
+        # as its minimum size hint, which ratcheted the pane (and the whole
+        # replay panel) to the biggest size it had ever been, so neither could
+        # be dragged smaller again once a video frame was on screen.
         self.video_view.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+            QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored
         )
         self.video_view.setText(tr("尚无录像\n开启自动录像后按赛段生成"))
         self.video_view.installEventFilter(self)
@@ -1176,7 +1265,8 @@ class TelemetryWindow(QMainWindow):
         mbox.addLayout(map_head)
 
         self.track_map = TrackMap()
-        self.track_map.setMinimumHeight(200)
+        # small enough that the video above it can still be dragged bigger
+        self.track_map.setMinimumHeight(120)
         self.track_map.distance_clicked.connect(self._on_map_clicked)
         self.track_map.distance_hovered.connect(self._on_map_hovered)
         mbox.addWidget(self.track_map, 1)
@@ -1196,12 +1286,49 @@ class TelemetryWindow(QMainWindow):
         if self.replay_panel_toggle is not None:
             self.replay_panel_toggle.setChecked(visible)
         if visible:
-            self._resize_panel(self._panel_width())
+            # the splitter has no geometry yet while the window is being built,
+            # so restoring the panel width has to wait for the first show
+            QTimer.singleShot(0, lambda: self._resize_panel(self._panel_width()))
             sizes = state.get("replay_split")
             if isinstance(sizes, list) and len(sizes) == 2:
                 self.replay_split.setSizes([int(sizes[0]), int(sizes[1])])
+            else:
+                QTimer.singleShot(0, self._fit_replay_split)
+
+    def _fit_replay_split(self) -> None:
+        """First run: give the video the bigger half instead of the map."""
+        total = sum(self.replay_split.sizes()) or self.replay_split.height()
+        if total <= 0:
+            return
+        video = int(round(total * 0.62))
+        self.replay_split.setSizes([video, total - video])
+
+    def _begin_panel_drag(self) -> None:
+        """Freeze the charts while the replay panel is dragged left/right.
+
+        Six pyqtgraph plots cost ~80ms to repaint, so resizing them on every
+        mouse move made the drag a slideshow. They keep the pixels they have
+        and repaint once the handle is released.
+        """
+        if getattr(self, "_chart_drag_frozen", False):
+            return
+        self._chart_drag_frozen = True
+        self.chart_scroll.setUpdatesEnabled(False)
+
+    def _end_panel_drag(self) -> None:
+        if not getattr(self, "_chart_drag_frozen", False):
+            return
+        self._chart_drag_frozen = False
+        self.chart_scroll.setUpdatesEnabled(True)
+        viewport = self.chart_scroll.viewport()
+        if viewport is not None:
+            viewport.update()
+        QTimer.singleShot(0, self._sync_axis_width)
 
     def _on_replay_split_moved(self, _pos: int, _index: int) -> None:
+        self._replay_split_save.start()
+
+    def _on_main_split_moved(self, _pos: int, _index: int) -> None:
         self._replay_split_save.start()
 
     def _panel_width(self) -> int:
@@ -1217,7 +1344,8 @@ class TelemetryWindow(QMainWindow):
         charts = self.main_split.widget(1)
         # QSplitter silently redistributes when a pane is pushed under another
         # pane's minimum, which would shrink the panel back on every restore.
-        room = total - sizes[0] - charts.minimumSizeHint().width()
+        chart_min = max(charts.minimumSizeHint().width(), charts.minimumWidth())
+        room = total - sizes[0] - chart_min
         width = max(260, min(int(width), max(260, room)))
         if sizes[2] == width:
             return
@@ -1832,8 +1960,12 @@ class TelemetryWindow(QMainWindow):
         elif event_type == QEvent.Type.Resize:
             if obj is getattr(self, "video_view", None):
                 # the picture is a scaled pixmap, so it keeps its old size
-                # until the next decoded frame unless we repaint it here
-                self._paint_video_frame()
+                # until the next decoded frame unless we repaint it here.
+                # Rescaling a 1080p frame is not cheap, so coalesce a burst of
+                # resize events (splitter drags) into one repaint.
+                timer = getattr(self, "_video_resize_timer", None)
+                if timer is not None:
+                    timer.start()
             if obj in getattr(self, "_chart_widgets", ()):
                 self._sync_axis_width_to(obj.width())
         return super().eventFilter(obj, event)
@@ -2300,8 +2432,15 @@ class TelemetryWindow(QMainWindow):
     def _sync_axis_width_to(self, width: int) -> None:
         if not hasattr(self, "axis_plot"):
             return
-        if width > 120 and width != self.axis_plot.width():
-            self.axis_plot.setFixedWidth(width)
+        if width <= 120:
+            return
+        # keep the axis as wide as the chart above it, but only as a maximum:
+        # setFixedWidth also pinned chart_card's minimum width, which stopped
+        # the main splitter from shrinking the chart pane during a drag.
+        if self.axis_plot.maximumWidth() != width:
+            self.axis_plot.setMaximumWidth(width)
+        if self.axis_plot.minimumWidth() != 0:
+            self.axis_plot.setMinimumWidth(0)
 
     def _nominal_chart_heights(self) -> list[float]:
         available = 760.0
