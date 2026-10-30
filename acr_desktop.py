@@ -1094,6 +1094,7 @@ class TelemetryWindow(QMainWindow):
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
         )
         self.video_view.setText(tr("尚无录像\n开启自动录像后按赛段生成"))
+        self.video_view.installEventFilter(self)
         vbox.addWidget(self.video_view, 1)
 
         transport = QHBoxLayout()
@@ -1829,6 +1830,10 @@ class TelemetryWindow(QMainWindow):
                 self._handle_chart_wheel(obj, event)
                 return True
         elif event_type == QEvent.Type.Resize:
+            if obj is getattr(self, "video_view", None):
+                # the picture is a scaled pixmap, so it keeps its old size
+                # until the next decoded frame unless we repaint it here
+                self._paint_video_frame()
             if obj in getattr(self, "_chart_widgets", ()):
                 self._sync_axis_width_to(obj.width())
         return super().eventFilter(obj, event)
