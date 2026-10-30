@@ -370,7 +370,11 @@ class VideoRecorder:
                         tr("5 秒内没有抓到画面"))
                 if state.get("t0") is None or state.get("prev") is None:
                     continue
-                want = int((now - state["t0"]) * self.fps)
+                # Only fill slots that are already behind us: the slot that is
+                # still open belongs to the live frames, and claiming it here
+                # would throw the real frame away (this used to cap the video
+                # at ~12 distinct frames per second).
+                want = int((now - state["t0"]) * self.fps) - 1
                 last = state.get("last_slot")
                 if last is None or want <= last:
                     continue
