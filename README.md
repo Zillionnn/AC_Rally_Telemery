@@ -71,6 +71,10 @@ pacenotes/       从游戏资源抽取的路书数据
 
 `master` 是 Python 实现（上述客户端）。`rust` 分支是一份并行的 Rust/egui 重写，不在本仓库发布。
 
+## 署名
+
+本项目由作者与 **DeepSeek Harness** 的 AI 编程代理（模型 `deepseek-flash`）协作完成：客户端界面、图表与回放面板的实现、问题定位、验证与打包均有该代理参与。
+
 ## 许可
 
 MIT，见 [LICENSE](LICENSE)。仅用于离线分析与个人训练，不包含任何游戏文件。
