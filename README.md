@@ -73,13 +73,13 @@ copy /y "build_exe\ACR Telemetry.exe" "dist\ACR Telemetry.exe"
 | Inno Setup 7（x64） | `C:\Program Files\Inno Setup 7\ISCC.exe` |
 | Inno Setup 6 | `C:\Program Files (x86)\Inno Setup 6\ISCC.exe` |
 
-版本号与 `acr_version.py` 保持一致（当前 0.3.17）：
+版本号与 `acr_version.py` 保持一致（当前 0.3.18）：
 
 ```bash
-"C:\Program Files\Inno Setup 7\ISCC.exe" /DMyAppVersion=0.3.17 acr_installer.iss
+"C:\Program Files\Inno Setup 7\ISCC.exe" /DMyAppVersion=0.3.18 acr_installer.iss
 ```
 
-产物：`dist\ACR Telemetry Setup 0.3.17.exe`，中文/English 安装向导（中文翻译在 `installer\ChineseSimplified.isl`，
+产物：`dist\ACR Telemetry Setup 0.3.18.exe`，中文/English 安装向导（中文翻译在 `installer\ChineseSimplified.isl`，
 按系统语言自动选择）。安装包按用户装到 `%LOCALAPPDATA%\Programs\ACR Telemetry`
 （不需要管理员权限），创建开始菜单和桌面快捷方式，并在安装目录下建 `telemetry\` 作为数据目录；
 卸载走“设置 → 应用”或安装目录里的 `unins000.exe`，升级时直接运行新安装包覆盖安装即可。
@@ -112,6 +112,14 @@ Get-Content '.\ACR Telemetry.exe' -Stream Zone.Identifier   # 通常显示 ZoneI
 - 改用安装包安装（安装包内的文件不带该标记）。
 
 注意：NTFS 内复制文件会连这个数据流一起复制（所以“复制到 %TEMP%”不一定能去掉它）；不要把浏览器/聊天工具里收到的 exe 直接覆盖到 `dist\`，用 `acr_build.py onefile` 的产物。
+
+### 录像没录上 / 客户端跑到一半崩了
+
+现象：赛段结束只有 `.csv`，`videos\` 里没有 mp4，客户端还崩过一次。
+
+原因：`windows-capture`（Windows Graphics Capture 封装）在**同一进程里第二次**调用 `start_free_threaded()` 会以访问违例直接崩掉进程；同时 PyAV 要等第一次 mux 才创建 mp4，所以“没文件”看起来像没触发录像。
+
+现在的做法：捕获会话**每个进程只创建一次**，之后每个赛段的录制都挂在同一个会话上，赛段之间不再重建捕获；录制开始时就把编码器打开、文件建好，5 秒内没抓到画面会记为错误。副作用：捕获绑定的窗口一旦关闭（退出游戏）或改选了别的录像窗口，需要**重启客户端**才能继续录像，否则提示“游戏窗口已关闭，重启客户端后才能继续录像”。`.meta.json` 会在录像收尾前先落盘，编码器再崩也不会丢时长和统计。
 
 ## 自检
 

@@ -363,15 +363,6 @@ class AutoRecorder(QThread):
         except Exception:
             pass
         duration = float(record["last_stage"])
-        video = self._video_stop(discard=discard)
-        if discard:
-            self._close_record_static(record)
-            try:
-                record["path"].unlink(missing_ok=True)
-                record["path"].with_suffix(".meta.json").unlink(missing_ok=True)
-            except Exception:
-                pass
-            return
         meta = {
             "stage_time": duration,
             "rows": record["rows"],
@@ -381,6 +372,19 @@ class AutoRecorder(QThread):
             "reason": reason,
             "incomplete": reason != "finish",
         }
+        if not discard:
+            # Land the run metadata before the recorder is finalised: a crash
+            # in the encoder teardown must not cost the stage its stats.
+            self._write_meta(record, meta)
+        video = self._video_stop(discard=discard)
+        if discard:
+            self._close_record_static(record)
+            try:
+                record["path"].unlink(missing_ok=True)
+                record["path"].with_suffix(".meta.json").unlink(missing_ok=True)
+            except Exception:
+                pass
+            return
         if record.get("video") and not video.get("error"):
             meta.update({
                 "video": record["video"],
@@ -402,6 +406,13 @@ class AutoRecorder(QThread):
                 )
         except Exception:
             pass
+        self._write_meta(record, meta)
+        self._close_record_static(record)
+        if emit and duration >= 5.0 and record["rows"] > 100:
+            self.finished_run.emit(str(record["path"]), duration)
+
+    @staticmethod
+    def _write_meta(record, meta: dict) -> None:
         try:
             record["path"].with_suffix(".meta.json").write_text(
                 json.dumps(meta, indent=2, ensure_ascii=False),
@@ -409,6 +420,3 @@ class AutoRecorder(QThread):
             )
         except Exception:
             pass
-        self._close_record_static(record)
-        if emit and duration >= 5.0 and record["rows"] > 100:
-            self.finished_run.emit(str(record["path"]), duration)

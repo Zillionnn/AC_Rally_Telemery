@@ -6,7 +6,7 @@
 ; so it is installed per-user (no UAC) into %LOCALAPPDATA%\Programs\ACR Telemetry.
 
 #ifndef MyAppVersion
-  #define MyAppVersion "0.3.17"
+  #define MyAppVersion "0.3.18"
 #endif
 
 #define MyAppName "ACR Telemetry Studio"

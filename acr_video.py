@@ -4,10 +4,17 @@ Built from the spike that proved this stack on this machine: Windows Graphics
 Capture for the picture, WASAPI loopback for everything the machine plays, and
 PyAV for H.264 (NVENC when present) + AAC. The traps the spike found are all
 handled here and noted where they matter.
+
+One of those traps is fatal: windows-capture 2.0.1 crashes the whole process
+with an access violation inside ``start_free_threaded()`` when a second
+capture is created in the same process, so every stage after the first one
+used to end either without a video or with the client dying.  The capture is
+therefore created once per process and each recording attaches to it.
 """
 
 from __future__ import annotations
 
+import atexit
 import ctypes
 import queue
 import threading
@@ -63,6 +70,95 @@ def find_window(patterns=DEFAULT_PATTERNS) -> tuple[int, str] | None:
     return None
 
 
+class _CaptureHost:
+    """The one Graphics Capture session this process is allowed to create.
+
+    The capture keeps running while no recording is attached; frames are
+    dropped until a :class:`VideoRecorder` attaches, so a stage can start
+    recording without waiting for the desktop to be captured again.
+    """
+
+    def __init__(self, hwnd: int, title: str | None) -> None:
+        from windows_capture import WindowsCapture
+
+        self.hwnd = int(hwnd)
+        self.target: tuple[int, str | None] = (int(hwnd), title)
+        self.dead = False
+        self.session = None
+        capture = WindowsCapture(window_hwnd=self.hwnd, cursor_capture=True)
+
+        @capture.event
+        def on_frame_arrived(frame, control) -> None:
+            session = self.session
+            if session is None:
+                return
+            try:
+                session._on_frame(frame)
+            except Exception as exc:  # noqa: BLE001
+                session._state.setdefault("errors", []).append(
+                    f"frame: {type(exc).__name__}: {exc}")
+
+        @capture.event
+        def on_closed() -> None:
+            # The game window went away; this capture cannot be replaced
+            # without starting a second capture, which kills the process.
+            self.dead = True
+            self.session = None
+
+        self._capture = capture
+        self._control = capture.start_free_threaded()
+
+    def attach(self, session: "VideoRecorder") -> None:
+        if self.dead:
+            raise RuntimeError(tr("游戏窗口已关闭，重启客户端后才能继续录像"))
+        self.session = session
+
+    def detach(self, session: "VideoRecorder") -> None:
+        if self.session is session:
+            self.session = None
+
+    def stop(self) -> None:
+        if self.dead:
+            return
+        self.dead = True
+        self.session = None
+        try:
+            self._control.stop()
+            self._control.wait()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+_HOST: _CaptureHost | None = None
+_HOST_LOCK = threading.Lock()
+
+
+def _capture_host(hwnd: int, title: str | None) -> _CaptureHost:
+    """Return the process-wide capture, creating it only once."""
+    global _HOST
+    with _HOST_LOCK:
+        if _HOST is not None:
+            if _HOST.dead:
+                raise RuntimeError(tr("游戏窗口已关闭，重启客户端后才能继续录像"))
+            if _HOST.hwnd != int(hwnd):
+                raise RuntimeError(tr("录像窗口已变化，重启客户端后才能继续录像"))
+            return _HOST
+        _HOST = _CaptureHost(hwnd, title)
+        return _HOST
+
+
+def shutdown_capture() -> None:
+    """Release the capture (used on exit; it must never be recreated)."""
+    global _HOST
+    with _HOST_LOCK:
+        host, _HOST = _HOST, None
+    if host is not None:
+        host.stop()
+
+
+atexit.register(shutdown_capture)
+
+
 class VideoRecorder:
     """One recording at a time; start()/stop() are called from the Qt thread."""
 
@@ -81,6 +177,7 @@ class VideoRecorder:
         self._stop = threading.Event()
         self._lock = threading.Lock()
         self._threads: list[threading.Thread] = []
+        self._host: _CaptureHost | None = None
         self._state: dict[str, Any] = {}
         self._pix_fmt = "nv12"
         self._encoder_name = None
@@ -99,6 +196,15 @@ class VideoRecorder:
             self._begin(hwnd, patterns)
         except Exception as exc:  # noqa: BLE001
             self._state["error"] = f"{type(exc).__name__}: {exc}"
+            self._stop.set()
+            for thread in self._threads:
+                thread.join(timeout=3.0)
+            try:
+                container = getattr(self, "_container", None)
+                if container is not None:
+                    container.close()
+            except Exception:  # noqa: BLE001
+                pass
             self._cleanup()
             self.running = False
             return False
@@ -108,6 +214,8 @@ class VideoRecorder:
     def stop(self) -> dict:
         if not self.running:
             return self.last_result
+        if self._host is not None:
+            self._host.detach(self)
         self._stop.set()
         for thread in self._threads:
             thread.join(timeout=6.0)
@@ -119,34 +227,24 @@ class VideoRecorder:
     # --- internals --------------------------------------------------------
     def _begin(self, hwnd: int | None, patterns) -> None:
         import av
-        from windows_capture import WindowsCapture
 
         target = (hwnd, None) if hwnd else find_window(patterns)
         if not target:
             raise RuntimeError(tr("找不到游戏窗口"))
-        self.target = (int(target[0]), target[1] if len(target) > 1 else None)
+        self._host = _capture_host(int(target[0]),
+                                   target[1] if len(target) > 1 else None)
+        self.target = self._host.target
         self._state["hwnd"] = int(target[0])
 
         self._container = av.open(str(self._state["out"]), "w")
         self._vstream, self._encoder_name = self._add_video_stream(av)
         self._astream, self._audio = self._add_audio_stream(av)
+        # Open the encoder and write the header up front: a stream that never
+        # encodes leaves no file behind at all, and flushing an encoder that
+        # was never opened is what used to kill the client at the end of a run.
+        self._container.start_encoding()
         self._queue: queue.Queue = queue.Queue(maxsize=120)
 
-        capture = WindowsCapture(window_hwnd=self._state["hwnd"],
-                                 cursor_capture=True)
-
-        @capture.event
-        def on_frame_arrived(frame, control) -> None:
-            if self._stop.is_set():
-                control.stop()
-                return
-            self._on_video(frame)
-
-        @capture.event
-        def on_closed() -> None:
-            pass
-
-        self._control = capture.start_free_threaded()
         self._threads = [threading.Thread(target=self._pump, daemon=True),
                          threading.Thread(target=self._writer, daemon=True)]
         if self._audio is not None:
@@ -154,6 +252,7 @@ class VideoRecorder:
                                                   daemon=True))
         for thread in self._threads:
             thread.start()
+        self._host.attach(self)
 
     def _add_video_stream(self, av):
         name = self.encoder
@@ -223,9 +322,12 @@ class VideoRecorder:
                 state["t0"] = now
             return state.get("last_slot"), int((now - state["t0"]) * self.fps)
 
-    def _on_video(self, frame) -> None:
+    def _on_frame(self, frame) -> None:
+        """Called by :class:`_CaptureHost` on the capture thread."""
         import av
 
+        if self._stop.is_set():
+            return
         now = time.perf_counter()
         last, slot = self._slot_for(now)
         if last is not None and slot <= last:
@@ -254,11 +356,18 @@ class VideoRecorder:
     def _pump(self) -> None:
         """Repeat the last frame while the window sits still, so video time is
         real time and stays aligned with the telemetry."""
+        started = time.perf_counter()
         while not self._stop.is_set():
             time.sleep(0.5 / self.fps)
             state = self._state
             now = time.perf_counter()
             with self._lock:
+                if (state.get("v_pts", 0) == 0 and not state.get("starved")
+                        and now - started > 5.0):
+                    # Never let a silent capture pass for a good recording.
+                    state["starved"] = True
+                    state.setdefault("errors", []).append(
+                        tr("5 秒内没有抓到画面"))
                 if state.get("t0") is None or state.get("prev") is None:
                     continue
                 want = int((now - state["t0"]) * self.fps)
@@ -354,11 +463,6 @@ class VideoRecorder:
 
     def _finish(self) -> dict:
         state = self._state
-        try:
-            self._control.stop()
-            self._control.wait()
-        except Exception:  # noqa: BLE001
-            pass
         if self._audio is not None:
             try:
                 self._audio["raw"].stop_stream()
