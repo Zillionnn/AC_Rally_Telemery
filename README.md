@@ -32,9 +32,11 @@ ui_layout.json                      窗口与图高布局
 
 ```bash
 python -m venv .build_venv
-.build_venv/Scripts/pip install numpy==2.2.6 PySide6 pyqtgraph nuitka zstandard windows-capture av PyAudioWPatch
+.build_venv/Scripts/pip install numpy==2.2.6 PySide6 pyqtgraph nuitka zstandard windows-capture av PyAudioWPatch opencv-python
 .build_venv/Scripts/python acr_desktop.py --telemetry-dir dist/telemetry
 ```
+
+`dist/telemetry` 不存在也能启动（界面显示暂无数据，开始录制后会自动创建）。
 
 ## 打包
 
@@ -47,9 +49,10 @@ python -m venv .build_venv
 .build_venv/Scripts/python acr_build.py onefile    # 单文件 exe → build_exe/ACR Telemetry.exe
 ```
 
-然后把 exe 部署到 `dist\`（安装包和运行数据都以这里为基准）：
+然后把 exe 部署到 `dist\`（安装包从这里取文件）：
 
 ```bash
+if not exist "dist" mkdir "dist"
 copy /y "build_exe\ACR Telemetry.exe" "dist\ACR Telemetry.exe"
 ```
 
@@ -62,7 +65,8 @@ copy /y "build_exe\ACR Telemetry.exe" "dist\ACR Telemetry.exe"
 "ISCC.exe" /DMyAppVersion=0.3.16 acr_installer.iss
 ```
 
-产物：`dist\ACR Telemetry Setup 0.3.16.exe`。安装包按用户装到 `%LOCALAPPDATA%\Programs\ACR Telemetry`
+产物：`dist\ACR Telemetry Setup 0.3.16.exe`，中文/English 安装向导（中文翻译在 `installer\ChineseSimplified.isl`，
+按系统语言自动选择）。安装包按用户装到 `%LOCALAPPDATA%\Programs\ACR Telemetry`
 （不需要管理员权限），创建开始菜单和桌面快捷方式，并在安装目录下建 `telemetry\` 作为数据目录；
 卸载走“设置 → 应用”或安装目录里的 `unins000.exe`，升级时直接运行新安装包覆盖安装即可。
 旧数据把原来的 `telemetry\` 目录复制进安装目录就能继续用。
@@ -107,6 +111,7 @@ acr_play.py      回放解码与音频输出
 acr_build.py     Nuitka 构建脚本
 acr_version.py   版本号（exe 文件版本与安装包默认版本）
 acr_installer.iss Inno Setup 安装包脚本
+installer/       安装包中文翻译（ChineseSimplified.isl）
 pacenotes/       从游戏资源抽取的路书数据
 ```
 

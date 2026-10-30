@@ -35,9 +35,7 @@ ArchitecturesInstallIn64BitMode=x64
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
-#ifdef UseChinese
-Name: "chinesesimplified"; MessagesFile: "compiler:ChineseSimplified.isl"
-#endif
+Name: "chinesesimplified"; MessagesFile: "{#SourcePath}\installer\ChineseSimplified.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
