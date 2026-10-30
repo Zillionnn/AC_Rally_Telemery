@@ -64,6 +64,7 @@ import acr_play
 import acr_track
 from acr_i18n import tr
 from acr_live import AutoRecorder
+from acr_version import __version__ as APP_VERSION
 
 
 _LANG_OVERRIDE = None
@@ -822,7 +823,7 @@ class TelemetryWindow(QMainWindow):
         self._grid_hidden = False
 
         pg.setConfigOptions(background=C["bg"], foreground=C["muted"], antialias=True)
-        self.setWindowTitle("ACR Telemetry Studio")
+        self.setWindowTitle(f"ACR Telemetry Studio · v{APP_VERSION}")
         self.setMinimumSize(1280, 760)
         self.resize(1800, 1000)
         self.setStyleSheet(STYLE)
@@ -911,6 +912,9 @@ class TelemetryWindow(QMainWindow):
         subtitle.setObjectName("subtitle")
         titles.addWidget(brand)
         titles.addWidget(subtitle)
+        self.version_label = QLabel(f"v{APP_VERSION}")
+        self.version_label.setObjectName("cardHint")
+        titles.addWidget(self.version_label)
         layout.addLayout(titles)
         layout.addStretch(1)
 
@@ -1613,13 +1617,13 @@ class TelemetryWindow(QMainWindow):
         self._pacenote_notes = []
         self._update_track_label(None)
         if self.pacenote_book.error:
-            self.setWindowTitle("ACR Telemetry Studio")
+            self.setWindowTitle(f"ACR Telemetry Studio · v{APP_VERSION}")
             self.pace_note.setText(tr("路书加载失败：{error}").format(
                 error=self.pacenote_book.error))
             self._draw_pacenote_markers()
             return
         if self.current is None or not self.pacenote_book.stages:
-            self.setWindowTitle("ACR Telemetry Studio")
+            self.setWindowTitle(f"ACR Telemetry Studio · v{APP_VERSION}")
             self.pace_note.setText(tr("— 没有可用的赛段路书"))
             self._draw_pacenote_markers()
             return
@@ -1628,9 +1632,9 @@ class TelemetryWindow(QMainWindow):
         auto_stage = self.pacenote_book.stages.get(auto_key or "")
         self._update_track_label(auto_stage)
         self.setWindowTitle(
-            f"ACR Telemetry Studio · {auto_stage.label}"
+            f"ACR Telemetry Studio · v{APP_VERSION} · {auto_stage.label}"
             if auto_stage is not None
-            else "ACR Telemetry Studio"
+            else f"ACR Telemetry Studio · v{APP_VERSION}"
         )
         self.pace_combo.setItemText(
             0,

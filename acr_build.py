@@ -17,6 +17,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from acr_version import __version__ as APP_VERSION
+
 ROOT = Path(__file__).resolve().parent
 VENV = ROOT / ".build_venv" / "Scripts" / "python.exe"
 SITE = ROOT / ".build_venv" / "Lib" / "site-packages"
@@ -25,8 +27,8 @@ SP = str(SITE).replace("\\", "/")
 COMMON = [
     "--assume-yes-for-downloads",
     "--windows-console-mode=disable",
-    "--windows-file-version=0.3.11.0",
-    "--windows-product-version=0.3.11.0",
+    f"--windows-file-version={APP_VERSION}.0",
+    f"--windows-product-version={APP_VERSION}.0",
     "--product-name=ACR Telemetry",
     "--file-description=ACR Telemetry Studio",
     "--company-name=ACRallyRec",
