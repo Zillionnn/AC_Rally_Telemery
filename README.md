@@ -43,7 +43,7 @@ python -m venv .build_venv
 .build_venv/Scripts/python acr_build.py onefile    # 单文件 exe → build_exe/ACR Telemetry.exe
 ```
 
-Nuitka 的 `--enable-plugin=pyside6` 与 QtOpenGL/QtSvg 的 include 已固化在脚本里；不要删除输出目录，缓存能让后续构建只重编改动的模块。
+Nuitka 的 `--enable-plugin=pyside6` 与 QtOpenGL/QtSvg 的 include 已固化在脚本里；不要删除输出目录，缓存能让后续构建只重编改动的模块。`acr_build.py` 会把 Nuitka 缓存和临时目录固定到项目内的 `.nuitka_cache/`、`.build_tmp/`（两者已 gitignore），避免 `%LOCALAPPDATA%` / `%TEMP%` 不可写时出现构建失败。
 
 ### 安装包（推荐交付）
 
@@ -54,9 +54,32 @@ Nuitka 的 `--enable-plugin=pyside6` 与 QtOpenGL/QtSvg 的 include 已固化在
 "ISCC.exe" "/DMyAppVersion=0.3.16" acr_installer.iss      # 显式指定版本号
 ```
 
-安装包按用户安装到 `%LOCALAPPDATA%\Programs\ACR Telemetry`（不需要管理员权限），创建开始菜单和桌面快捷方式，并在安装目录下建 `telemetry\` 作为数据目录。
+安装包按用户安装到 `%LOCALAPPDATA%\Programs\ACR Telemetry`（不需要管理员权限），创建开始菜单和桌面快捷方式，并在安装目录下建 `telemetry\` 作为数据目录；卸载走“设置 → 应用”或安装目录里的 `unins000.exe`，升级时直接运行新安装包覆盖安装。
 
-> 注意：经浏览器、聊天工具或从压缩包转存的 exe 会被 Windows 打上 `Zone.Identifier`（"来自 Internet"）标记，双击会弹"打开文件 - 安全警告 / 无法验证发布者"。构建产物本身没有这个标记；遇到时右键 → 属性 → 勾选"解除锁定"，或执行 `Unblock-File .\ACR Telemetry.exe`。
+历史数据：把原来的 `telemetry\` 目录复制进安装目录即可继续使用旧 run 和录像。
+
+## 常见问题
+
+### 双击时提示“打开文件 - 安全警告 / 无法验证发布者”
+
+现象：每次从资源管理器双击 `ACR Telemetry.exe` 都弹“无法验证发布者。你确定要运行此软件吗？”，点“运行”后也可能没有反应。
+
+原因：文件被 Windows 打上了“来自 Internet”标记（NTFS 备用数据流 `Zone.Identifier`，由浏览器、聊天工具下载或从压缩包转存时产生），**与程序本身无关，构建产物没有这个标记**。排查：
+
+```powershell
+Get-Item '.\ACR Telemetry.exe' -Stream *          # 看是否存在 Zone.Identifier
+Get-Content '.\ACR Telemetry.exe' -Stream Zone.Identifier   # 通常显示 ZoneId=3
+```
+
+解决（任一）：
+
+- 右键文件 → 属性 → 常规 → 勾选“解除锁定” → 应用；
+- PowerShell：`Unblock-File '.\ACR Telemetry.exe'`；
+- 改用安装包安装（安装包内的文件不带该标记）。
+
+### 打包时报 `SConsLockFailure` 或 `LNK1104`
+
+前者是读写 Nuitka 缓存目录（`%LOCALAPPDATA%\Nuitka\...\content-14.3.json` 的 scons 锁）失败，后者是 MSVC 链接器无法在 `%TEMP%` 里创建临时文件。当前 `acr_build.py` 已把缓存和临时目录重定向到项目内（`.nuitka_cache/`、`.build_tmp/`），正常执行 `acr_build.py onefile` 不会再遇到；如果手动调用 `python -m nuitka`，需要自行设置 `NUITKA_CACHE_DIR`、`TEMP`、`TMP` 到可写目录。
 
 ## 自检
 
