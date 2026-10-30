@@ -42,6 +42,12 @@ python -m venv .build_venv
 
 依赖见上一节（Nuitka 已在依赖列表里）。Windows 上 Nuitka 走 MSVC：需要 Visual Studio Build Tools 2019/2022（勾选“使用 C++ 的桌面开发”）。
 
+**以下命令都在仓库根目录执行**（`acr_build.py`、`acr_installer.iss` 都在根目录，不要在 `dist\` 里执行）：
+
+```bash
+cd /d D:\path\to\ACRallyRec
+```
+
 ### 单文件 exe
 
 ```bash
@@ -58,11 +64,17 @@ copy /y "build_exe\ACR Telemetry.exe" "dist\ACR Telemetry.exe"
 
 ### 安装包
 
-需要 [Inno Setup 6+](https://jrsoftware.org/isinfo.php)。安装后把 `ISCC.exe` 加入 PATH（或写完整路径），
-版本号与 `acr_version.py` 保持一致：
+需要 [Inno Setup 6+](https://jrsoftware.org/isinfo.php)（**只需安装一次**，默认安装即可；`ISCC.exe` 默认不在 PATH 里，用完整路径或自己加 PATH）：
+
+| 版本 | ISCC 默认位置 |
+|---|---|
+| Inno Setup 7（x64） | `C:\Program Files\Inno Setup 7\ISCC.exe` |
+| Inno Setup 6 | `C:\Program Files (x86)\Inno Setup 6\ISCC.exe` |
+
+版本号与 `acr_version.py` 保持一致（当前 0.3.16）：
 
 ```bash
-"ISCC.exe" /DMyAppVersion=0.3.16 acr_installer.iss
+"C:\Program Files\Inno Setup 7\ISCC.exe" /DMyAppVersion=0.3.16 acr_installer.iss
 ```
 
 产物：`dist\ACR Telemetry Setup 0.3.16.exe`，中文/English 安装向导（中文翻译在 `installer\ChineseSimplified.isl`，
