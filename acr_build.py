@@ -25,8 +25,8 @@ SP = str(SITE).replace("\\", "/")
 COMMON = [
     "--assume-yes-for-downloads",
     "--windows-console-mode=disable",
-    "--windows-file-version=0.3.7.0",
-    "--windows-product-version=0.3.7.0",
+    "--windows-file-version=0.3.8.0",
+    "--windows-product-version=0.3.8.0",
     "--product-name=ACR Telemetry",
     "--file-description=ACR Telemetry Studio",
     "--company-name=ACRallyRec",
