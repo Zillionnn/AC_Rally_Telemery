@@ -62,7 +62,9 @@ if not exist "dist" mkdir "dist"
 copy /y "build_exe\ACR Telemetry.exe" "dist\ACR Telemetry.exe"
 ```
 
-### 安装包
+### 安装包（可选）
+
+本机直接从 `dist\` 运行不需要安装包；这一节只用于**分发给别人**或想要固定安装目录/卸载项的场景。注意安装版的数据目录是**安装目录下的 `telemetry\`**，与 `dist\telemetry` 不是同一份，需要旧数据时复制过去。
 
 需要 [Inno Setup 6+](https://jrsoftware.org/isinfo.php)（**只需安装一次**，默认安装即可；`ISCC.exe` 默认不在 PATH 里，用完整路径或自己加 PATH）：
 
@@ -83,13 +85,20 @@ copy /y "build_exe\ACR Telemetry.exe" "dist\ACR Telemetry.exe"
 卸载走“设置 → 应用”或安装目录里的 `unins000.exe`，升级时直接运行新安装包覆盖安装即可。
 旧数据把原来的 `telemetry\` 目录复制进安装目录就能继续用。
 
+## 运行
+
+打包后直接双击 `dist\ACR Telemetry.exe` 即可（单文件，不需要安装）。数据目录是 **exe 同目录下的 `telemetry\`**，例如 `dist\telemetry\`。
+
+- 关闭窗口是**隐藏到托盘**（托盘模式），不是退出；重新打开点任务栏右下角 `^` 里的 ACR Telemetry 图标，退出用托盘图标右键 → 退出。
+- 双击时若弹“客户端已经在运行，请从系统托盘打开”：说明已有一个实例在托盘里（单实例锁），从托盘打开即可；找不到托盘图标就结束任务管理器里的 `ACR Telemetry.exe`，或删除 exe 同目录的 `acr_telemetry.lock` 后重开。
+
 ## 常见问题
 
 ### 双击时提示“打开文件 - 安全警告 / 无法验证发布者”
 
 现象：每次双击 `ACR Telemetry.exe` 都弹“无法验证发布者。你确定要运行此软件吗？”，点“运行”后也可能没有反应。
 
-原因：文件被 Windows 打上了“来自 Internet”标记（NTFS 备用数据流 `Zone.Identifier`，浏览器、聊天工具下载或从压缩包转存时产生），**与程序本身无关，构建产物没有这个标记**。排查：
+原因：文件被 Windows 打上了“来自 Internet”标记（NTFS 备用数据流 `Zone.Identifier`，浏览器、聊天工具下载或从压缩包转存时产生），**与程序本身无关，本地构建产物没有这个标记**。排查：
 
 ```powershell
 Get-Item '.\ACR Telemetry.exe' -Stream *          # 看是否存在 Zone.Identifier
@@ -101,6 +110,8 @@ Get-Content '.\ACR Telemetry.exe' -Stream Zone.Identifier   # 通常显示 ZoneI
 - 右键文件 → 属性 → 常规 → 勾选“解除锁定” → 应用；
 - PowerShell：`Unblock-File '.\ACR Telemetry.exe'`；
 - 改用安装包安装（安装包内的文件不带该标记）。
+
+注意：NTFS 内复制文件会连这个数据流一起复制（所以“复制到 %TEMP%”不一定能去掉它）；不要把浏览器/聊天工具里收到的 exe 直接覆盖到 `dist\`，用 `acr_build.py onefile` 的产物。
 
 ## 自检
 
