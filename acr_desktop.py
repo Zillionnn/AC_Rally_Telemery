@@ -3252,15 +3252,30 @@ class TelemetryWindow(QMainWindow):
         names = [Path(name).stem for name in (run.source_files or [])]
         return names[-1] if names else str(getattr(run, "started", "") or "")
 
+    @staticmethod
+    def _car_key(run) -> str:
+        meta = (run.meta if run is not None else None) or {}
+        return str(meta.get("car_model") or "").strip().lower()
+
     @classmethod
     def _pick_reference(cls, pool, current) -> str:
-        """The most recent run of the same stage; the fastest run of any stage
-        only when the stage has no other run yet (a new map must not borrow a
-        reference from a different track)."""
+        """Newest run of the same stage, preferring the same car.
+
+        A lap driven in a different car is not a useful reference, so the
+        same-car runs win first; the same stage without the car comes next,
+        and the fastest run overall only serves a stage that has no other run
+        yet (a new map must not borrow a reference from a different track).
+        """
         pool = [run for run in pool if run.id != current.id]
-        same = [run for run in pool if cls._same_track(current, run)]
-        if same:
-            return max(same, key=cls._run_stamp).id
+        car = cls._car_key(current)
+        tiers = (
+            [run for run in pool
+             if car and cls._car_key(run) == car and cls._same_track(current, run)],
+            [run for run in pool if cls._same_track(current, run)],
+        )
+        for tier in tiers:
+            if tier:
+                return max(tier, key=cls._run_stamp).id
         if not pool:
             return current.id
         return min(pool, key=lambda run: run.summary["time"]).id
