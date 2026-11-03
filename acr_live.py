@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import json
+import re
 import time
 from datetime import datetime
 from pathlib import Path
@@ -11,6 +12,19 @@ from PySide6.QtCore import QThread, Signal
 import acr_data
 import acr_telemetry
 from acr_i18n import tr
+
+
+def car_slug(static) -> str:
+    """Filename-safe car model for the recording name, '' when unknown."""
+    try:
+        info = acr_telemetry.parse_structure(
+            acr_telemetry.StaticInfo, static.read()
+        )
+        car = str(acr_telemetry.static_metadata(info).get("car_model") or "")
+    except Exception:  # noqa: BLE001
+        return ""
+    slug = re.sub(r"[^0-9A-Za-z]+", "_", car).strip("_")
+    return slug[:40]
 
 
 class AutoRecorder(QThread):
@@ -230,10 +244,12 @@ class AutoRecorder(QThread):
                 static = None
         self.out_dir.mkdir(parents=True, exist_ok=True)
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        path = self.out_dir / f"acr_telemetry_{stamp}.csv"
+        car = car_slug(static) if static is not None else ""
+        stem = f"acr_telemetry_{stamp}" + (f"_{car}" if car else "")
+        path = self.out_dir / f"{stem}.csv"
         suffix = 1
         while path.exists():
-            path = self.out_dir / f"acr_telemetry_{stamp}_{suffix}.csv"
+            path = self.out_dir / f"{stem}_{suffix}.csv"
             suffix += 1
         fh = path.open("w", newline="", encoding="utf-8")
         writer = csv.DictWriter(
