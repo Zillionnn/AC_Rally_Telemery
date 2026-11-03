@@ -3230,6 +3230,34 @@ class TelemetryWindow(QMainWindow):
             if float(run.summary.get("distance", 0.0)) >= longest * 0.8
         ]
 
+    @staticmethod
+    def _track_key(run) -> tuple[str, str]:
+        meta = (run.meta if run is not None else None) or {}
+        track = str(meta.get("track") or "").strip().lower()
+        config = str(meta.get("track_configuration") or "").strip().lower()
+        return track, config
+
+    @classmethod
+    def _same_track(cls, left, right) -> bool:
+        """Same stage: equal track, and equal layout when both know it."""
+        left_track, left_config = cls._track_key(left)
+        right_track, right_config = cls._track_key(right)
+        if not left_track or left_track != right_track:
+            return False
+        return not left_config or not right_config or left_config == right_config
+
+    @classmethod
+    def _pick_reference(cls, pool, current) -> str:
+        """Fastest run of the same stage; the fastest of any stage only when
+        the stage has no other run yet (a new map must not borrow a reference
+        from a different track)."""
+        pool = [run for run in pool if run.id != current.id]
+        same = [run for run in pool if cls._same_track(current, run)]
+        pool = same or pool
+        if not pool:
+            return current.id
+        return min(pool, key=lambda run: run.summary["time"]).id
+
     def _on_loaded(self, runs) -> None:
         self.current_combo.setEnabled(True)
         self.reference_combo.setEnabled(True)
@@ -3255,11 +3283,7 @@ class TelemetryWindow(QMainWindow):
                 ]
                 if not candidates:
                     candidates = [run for run in runs if run.id != current_id]
-                reference_id = (
-                    min(candidates, key=lambda run: run.summary["time"]).id
-                    if candidates
-                    else current_id
-                )
+                reference_id = self._pick_reference(candidates, new_run)
                 self.set_runs(runs, current_id, reference_id)
                 self._saved_message = tr("已保存 {time} · 分析已更新").format(
                     time=acr_data.format_time(new_run.summary["time"]))
@@ -3323,9 +3347,11 @@ class TelemetryWindow(QMainWindow):
             candidates = [run for run in main_runs if run.id != current_id]
             if not candidates:
                 candidates = [run for run in self.runs if run.id != current_id]
+            current_run = next(
+                (run for run in self.runs if run.id == current_id), None)
             reference_id = (
-                min(candidates, key=lambda run: run.summary["time"]).id
-                if candidates
+                self._pick_reference(candidates, current_run)
+                if candidates and current_run is not None
                 else current_id
             )
 
