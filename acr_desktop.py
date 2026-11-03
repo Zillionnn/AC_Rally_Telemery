@@ -3246,14 +3246,21 @@ class TelemetryWindow(QMainWindow):
             return False
         return not left_config or not right_config or left_config == right_config
 
+    @staticmethod
+    def _run_stamp(run) -> str:
+        """Sortable recency key: csv names carry the year, `started` does not."""
+        names = [Path(name).stem for name in (run.source_files or [])]
+        return names[-1] if names else str(getattr(run, "started", "") or "")
+
     @classmethod
     def _pick_reference(cls, pool, current) -> str:
-        """Fastest run of the same stage; the fastest of any stage only when
-        the stage has no other run yet (a new map must not borrow a reference
-        from a different track)."""
+        """The most recent run of the same stage; the fastest run of any stage
+        only when the stage has no other run yet (a new map must not borrow a
+        reference from a different track)."""
         pool = [run for run in pool if run.id != current.id]
         same = [run for run in pool if cls._same_track(current, run)]
-        pool = same or pool
+        if same:
+            return max(same, key=cls._run_stamp).id
         if not pool:
             return current.id
         return min(pool, key=lambda run: run.summary["time"]).id
