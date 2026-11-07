@@ -3218,16 +3218,22 @@ class TelemetryWindow(QMainWindow):
             self._reload_pending = False
             self.start_loader()
 
-    def _main_runs(self, runs):
+    def _main_runs(self, runs, length: float | None = None):
+        """Drop aborted runs: keep those at least as long as `length`, or as the
+        longest run when no length is given.  The baseline must be the stage
+        being compared, never the longest stage on the machine, or a short
+        stage loses every one of its own runs."""
         if not runs:
             return []
-        longest = max(float(run.summary.get("distance", 0.0)) for run in runs)
-        if longest <= 0:
+        base = float(length or 0.0)
+        if base <= 0:
+            base = max(float(run.summary.get("distance", 0.0)) for run in runs)
+        if base <= 0:
             return list(runs)
         return [
             run
             for run in runs
-            if float(run.summary.get("distance", 0.0)) >= longest * 0.8
+            if float(run.summary.get("distance", 0.0)) >= base * 0.8
         ]
 
     @staticmethod
@@ -3268,6 +3274,22 @@ class TelemetryWindow(QMainWindow):
         """
         pool = [run for run in pool if run.id != current.id]
         car = cls._car_key(current)
+        # Ignore aborted chunks of this stage: one crashed/restarted run would
+        # otherwise become the "newest" reference with a meaningless time.
+        stage_lengths = [
+            float(run.summary.get("distance", 0.0) or 0.0)
+            for run in pool if cls._same_track(current, run)
+        ]
+        stage_lengths.append(float(current.summary.get("distance", 0.0) or 0.0))
+        full_length = max(stage_lengths)
+        if full_length > 0:
+            full = [
+                run for run in pool
+                if float(run.summary.get("distance", 0.0) or 0.0)
+                >= full_length * 0.8
+            ]
+            if full:
+                pool = full
         tiers = (
             [run for run in pool
              if car and cls._car_key(run) == car and cls._same_track(current, run)],
@@ -3300,8 +3322,13 @@ class TelemetryWindow(QMainWindow):
             )
             if new_run is not None:
                 current_id = new_run.id
+                # Aborted runs are judged against this stage, not the longest
+                # stage on disk: a short stage would otherwise lose all of its
+                # own runs and fall back to comparing against another track.
+                length = float(new_run.summary.get("distance", 0.0) or 0.0)
                 candidates = [
-                    run for run in self._main_runs(runs) if run.id != current_id
+                    run for run in self._main_runs(runs, length)
+                    if run.id != current_id
                 ]
                 if not candidates:
                     candidates = [run for run in runs if run.id != current_id]
@@ -3366,11 +3393,16 @@ class TelemetryWindow(QMainWindow):
         if current_id not in ids:
             current_id = (main_runs or self.runs)[-1].id
         if reference_id not in ids:
-            candidates = [run for run in main_runs if run.id != current_id]
-            if not candidates:
-                candidates = [run for run in self.runs if run.id != current_id]
             current_run = next(
                 (run for run in self.runs if run.id == current_id), None)
+            length = (
+                float(current_run.summary.get("distance", 0.0) or 0.0)
+                if current_run is not None else 0.0
+            )
+            pool = self._main_runs(self.runs, length) if length > 0 else main_runs
+            candidates = [run for run in pool if run.id != current_id]
+            if not candidates:
+                candidates = [run for run in self.runs if run.id != current_id]
             reference_id = (
                 self._pick_reference(candidates, current_run)
                 if candidates and current_run is not None
