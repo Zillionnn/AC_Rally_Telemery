@@ -180,6 +180,16 @@ EN = {
     "更快": "Faster",
     "当前": "Current",
     "参考": "Reference",
+    "自动参考": "Auto reference",
+    "勾选：换当前跑次时自动匹配同赛道（优先同车）的最近一圈。"
+    "在“参考”里手动选择会取消勾选，改为锁定那一圈。":
+        "Checked: re-match the reference to the newest run of the same stage "
+        "(same car first) whenever the current run changes. Picking a "
+        "reference by hand clears it and pins that run.",
+    "该赛道暂无其它记录，参考暂为当前圈":
+        "No other run on this stage yet; the reference is this run",
+    "参考不能与当前为同一圈，已自动重选":
+        "The reference cannot be the current run; re-matched it",
     "油门 当前": "Throttle current",
     "刹车 当前": "Brake current",
     "油门 参考": "Throttle ref",

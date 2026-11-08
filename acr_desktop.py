@@ -819,6 +819,10 @@ class TelemetryWindow(QMainWindow):
         self.loader = None
         self.pending_indices = (None, None)
         self._updating = False
+        # "Auto reference": while on, changing the current run re-matches the
+        # reference; a manual pick in the reference picker turns it off until
+        # the user turns it back on.  Session only, never persisted.
+        self._ref_auto = True
         self._cursor_x = 0.0
         self._cursor_index = 0
         self._cursor_lines = []
@@ -1005,15 +1009,23 @@ class TelemetryWindow(QMainWindow):
         layout.addWidget(self._selector_label(tr("当前")))
         self.current_combo = QComboBox()
         self.current_combo.setMinimumWidth(300)
-        self.current_combo.currentIndexChanged.connect(self._on_selection_changed)
+        self.current_combo.currentIndexChanged.connect(self._on_current_changed)
         layout.addWidget(self.current_combo)
 
         layout.addSpacing(6)
         layout.addWidget(self._selector_label(tr("参考")))
         self.reference_combo = QComboBox()
         self.reference_combo.setMinimumWidth(300)
-        self.reference_combo.currentIndexChanged.connect(self._on_selection_changed)
+        self.reference_combo.currentIndexChanged.connect(self._on_reference_changed)
         layout.addWidget(self.reference_combo)
+
+        self.ref_auto_check = QCheckBox(tr("自动参考"))
+        self.ref_auto_check.setChecked(True)
+        self.ref_auto_check.setToolTip(tr(
+            "勾选：换当前跑次时自动匹配同赛道（优先同车）的最近一圈。"
+            "在“参考”里手动选择会取消勾选，改为锁定那一圈。"))
+        self.ref_auto_check.toggled.connect(self._on_ref_auto_toggled)
+        layout.addWidget(self.ref_auto_check)
 
         self.refresh_btn = QPushButton(tr("刷新"))
         self.refresh_btn.clicked.connect(self.start_loader)
@@ -3298,9 +3310,9 @@ class TelemetryWindow(QMainWindow):
         for tier in tiers:
             if tier:
                 return max(tier, key=cls._run_stamp).id
-        if not pool:
-            return current.id
-        return min(pool, key=lambda run: run.summary["time"]).id
+        # No other run on this stage: fall back to the run itself rather than
+        # to a fastest run from another track, which is never a useful delta.
+        return current.id
 
     def _on_loaded(self, runs) -> None:
         self.current_combo.setEnabled(True)
@@ -3322,22 +3334,29 @@ class TelemetryWindow(QMainWindow):
             )
             if new_run is not None:
                 current_id = new_run.id
-                # Aborted runs are judged against this stage, not the longest
-                # stage on disk: a short stage would otherwise lose all of its
-                # own runs and fall back to comparing against another track.
-                length = float(new_run.summary.get("distance", 0.0) or 0.0)
-                candidates = [
-                    run for run in self._main_runs(runs, length)
-                    if run.id != current_id
-                ]
-                if not candidates:
-                    candidates = [run for run in runs if run.id != current_id]
-                reference_id = self._pick_reference(candidates, new_run)
+                hint = ""
+                if self._ref_auto:
+                    # Aborted runs are judged against this stage, not the
+                    # longest stage on disk: a short stage would otherwise
+                    # lose all of its own runs.
+                    length = float(new_run.summary.get("distance", 0.0) or 0.0)
+                    candidates = [
+                        run for run in self._main_runs(runs, length)
+                        if run.id != current_id
+                    ]
+                    if not candidates:
+                        candidates = [run for run in runs if run.id != current_id]
+                    reference_id = self._pick_reference(candidates, new_run)
+                    if reference_id == current_id:
+                        hint = tr("该赛道暂无其它记录，参考暂为当前圈")
+                # A pinned reference stays pinned across new runs.
                 self.set_runs(runs, current_id, reference_id)
                 self._saved_message = tr("已保存 {time} · 分析已更新").format(
                     time=acr_data.format_time(new_run.summary["time"]))
                 self._saved_until = time.monotonic() + 12.0
                 self._set_live("saved", self._saved_message)
+                if hint:
+                    self.status.showMessage(hint)
                 if self.tray is not None:
                     self.tray.showMessage(
                         "ACR Telemetry",
@@ -3419,6 +3438,9 @@ class TelemetryWindow(QMainWindow):
         if current_id not in ids:
             current_id = (main_runs or self.runs)[-1].id
         if reference_id not in ids:
+            if not self._ref_auto:
+                # The pinned run is gone; fall back to auto matching.
+                self._set_ref_auto(True)
             current_run = next(
                 (run for run in self.runs if run.id == current_id), None)
             length = (
@@ -3452,11 +3474,87 @@ class TelemetryWindow(QMainWindow):
         self.reference_combo.blockSignals(False)
         self._updating = False
         self._apply_selection()
+        if reference_id == current_id and len(self.runs) > 1:
+            self.status.showMessage(tr("该赛道暂无其它记录，参考暂为当前圈"))
 
-    def _on_selection_changed(self, _index: int) -> None:
+    def _auto_reference_id(self, current) -> str:
+        """Reference for `current`: same stage with the same car first, then
+        the same stage in any car.  Never another track: a stage without any
+        other run refers to itself until a second run exists."""
+        length = float(current.summary.get("distance", 0.0) or 0.0)
+        pool = self._main_runs(self.runs, length) if length > 0 else self.runs
+        candidates = [run for run in pool if run.id != current.id]
+        if not candidates:
+            candidates = [run for run in self.runs if run.id != current.id]
+        if not candidates:
+            return current.id
+        return self._pick_reference(candidates, current)
+
+    def _set_reference_id(self, reference_id: str) -> None:
+        """Select a reference programmatically, without it counting as a
+        manual pick."""
+        index = self.reference_combo.findData(reference_id)
+        if index < 0:
+            return
+        self._updating = True
+        self.reference_combo.blockSignals(True)
+        self.reference_combo.setCurrentIndex(index)
+        self.reference_combo.blockSignals(False)
+        self._updating = False
+
+    def _set_ref_auto(self, enabled: bool) -> None:
+        """Switch the auto/pinned mode without re-entering its handler."""
+        self._ref_auto = bool(enabled)
+        check = getattr(self, "ref_auto_check", None)
+        if check is not None:
+            check.blockSignals(True)
+            check.setChecked(self._ref_auto)
+            check.blockSignals(False)
+
+    def _on_current_changed(self, _index: int = 0) -> None:
         if self._updating:
             return
+        current = next(
+            (run for run in self.runs
+             if run.id == self.current_combo.currentData()), None)
+        if current is None:
+            return
+        hint = ""
+        if self._ref_auto:
+            reference_id = self._auto_reference_id(current)
+            if reference_id == current.id:
+                hint = tr("该赛道暂无其它记录，参考暂为当前圈")
+            self._set_reference_id(reference_id)
+        elif self.reference_combo.currentData() == current.id:
+            # A pinned reference that just became the current run would
+            # compare a run with itself; drop the pin and match again.
+            self._set_ref_auto(True)
+            reference_id = self._auto_reference_id(current)
+            self._set_reference_id(reference_id)
+            hint = tr("参考不能与当前为同一圈，已自动重选")
         self._apply_selection()
+        if hint:
+            self.status.showMessage(hint)
+
+    def _on_reference_changed(self, _index: int = 0) -> None:
+        if self._updating:
+            return
+        if self._ref_auto:
+            self._set_ref_auto(False)
+        self._apply_selection()
+
+    def _on_ref_auto_toggled(self, checked: bool) -> None:
+        self._ref_auto = bool(checked)
+        current = getattr(self, "current", None)
+        if not checked or current is None:
+            return
+        reference_id = self._auto_reference_id(current)
+        self._set_reference_id(reference_id)
+        hint = (tr("该赛道暂无其它记录，参考暂为当前圈")
+                if reference_id == current.id else "")
+        self._apply_selection()
+        if hint:
+            self.status.showMessage(hint)
 
     def _apply_selection(self) -> None:
         current_id = self.current_combo.currentData()
