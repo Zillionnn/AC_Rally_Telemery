@@ -1004,14 +1004,14 @@ class TelemetryWindow(QMainWindow):
 
         layout.addWidget(self._selector_label(tr("当前")))
         self.current_combo = QComboBox()
-        self.current_combo.setMinimumWidth(200)
+        self.current_combo.setMinimumWidth(300)
         self.current_combo.currentIndexChanged.connect(self._on_selection_changed)
         layout.addWidget(self.current_combo)
 
         layout.addSpacing(6)
         layout.addWidget(self._selector_label(tr("参考")))
         self.reference_combo = QComboBox()
-        self.reference_combo.setMinimumWidth(200)
+        self.reference_combo.setMinimumWidth(300)
         self.reference_combo.currentIndexChanged.connect(self._on_selection_changed)
         layout.addWidget(self.reference_combo)
 
@@ -3374,6 +3374,32 @@ class TelemetryWindow(QMainWindow):
         self.status.showMessage(tr("加载失败"))
         print(error, file=sys.stderr)
 
+    @staticmethod
+    def _run_display(run) -> tuple[str, str]:
+        """Combo text and tooltip for a run: which car, which stage, which lap."""
+        meta = (run.meta if run is not None else None) or {}
+        car = str(meta.get("car_model") or "").strip()
+        track = str(meta.get("track") or "").strip()
+        config = str(meta.get("track_configuration") or "").strip()
+        stage = " · ".join(bit for bit in (track, config) if bit)
+        parts = [str(run.label)]
+        if car:
+            parts.append(car)
+        if stage:
+            parts.append(stage)
+        text = " · ".join(parts)
+        distance = float(run.summary.get("distance", 0.0) or 0.0)
+        tooltip = "\n".join(
+            bit for bit in (
+                str(run.label),
+                car,
+                stage,
+                f"{distance:,.0f} m" if distance else "",
+                ", ".join(run.source_files or []),
+            ) if bit
+        )
+        return text, tooltip
+
     def set_runs(self, runs, current_id=None, reference_id=None) -> None:
         self.runs = list(runs)
         if not self.runs:
@@ -3415,8 +3441,11 @@ class TelemetryWindow(QMainWindow):
         self.current_combo.clear()
         self.reference_combo.clear()
         for run in self.runs:
-            self.current_combo.addItem(run.label, run.id)
-            self.reference_combo.addItem(run.label, run.id)
+            text, tooltip = self._run_display(run)
+            for combo in (self.current_combo, self.reference_combo):
+                combo.addItem(text, run.id)
+                index = combo.count() - 1
+                combo.setItemData(index, tooltip, Qt.ItemDataRole.ToolTipRole)
         self.current_combo.setCurrentIndex(self.current_combo.findData(current_id))
         self.reference_combo.setCurrentIndex(self.reference_combo.findData(reference_id))
         self.current_combo.blockSignals(False)
