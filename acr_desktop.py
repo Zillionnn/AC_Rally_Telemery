@@ -1011,6 +1011,11 @@ class TelemetryWindow(QMainWindow):
         self.current_combo.setMinimumWidth(300)
         self.current_combo.currentIndexChanged.connect(self._on_current_changed)
         layout.addWidget(self.current_combo)
+        self.delete_current_btn = QPushButton(tr("删当前"))
+        self.delete_current_btn.setToolTip(
+            tr("删除当前跑次：CSV、meta 和视频一起删掉（会先确认）"))
+        self.delete_current_btn.clicked.connect(self._on_delete_current)
+        layout.addWidget(self.delete_current_btn)
 
         layout.addSpacing(6)
         layout.addWidget(self._selector_label(tr("参考")))
@@ -1018,6 +1023,11 @@ class TelemetryWindow(QMainWindow):
         self.reference_combo.setMinimumWidth(300)
         self.reference_combo.currentIndexChanged.connect(self._on_reference_changed)
         layout.addWidget(self.reference_combo)
+        self.delete_reference_btn = QPushButton(tr("删参考"))
+        self.delete_reference_btn.setToolTip(
+            tr("删除参考跑次：CSV、meta 和视频一起删掉（会先确认）"))
+        self.delete_reference_btn.clicked.connect(self._on_delete_reference)
+        layout.addWidget(self.delete_reference_btn)
 
         self.ref_auto_check = QCheckBox(tr("自动参考"))
         self.ref_auto_check.setChecked(True)
@@ -3555,6 +3565,93 @@ class TelemetryWindow(QMainWindow):
         self._apply_selection()
         if hint:
             self.status.showMessage(hint)
+
+    def _run_file_paths(self, run) -> list[Path]:
+        """Every file that belongs to a run: csv, meta and the video."""
+        directory = Path(self.directory)
+        paths: list[Path] = []
+        for name in run.source_files or []:
+            csv_path = directory / name
+            paths.append(csv_path)
+            paths.append(csv_path.with_suffix(".meta.json"))
+        video = str((run.meta or {}).get("video") or "")
+        if video:
+            paths.append(directory / "videos" / video)
+        root = directory.resolve()
+        safe = []
+        for path in paths:
+            if not path.exists():
+                continue
+            if root not in path.resolve().parents:
+                continue
+            safe.append(path)
+        return safe
+
+    def _on_delete_current(self) -> None:
+        self._delete_run(self.current, tr("当前"))
+
+    def _on_delete_reference(self) -> None:
+        self._delete_run(self.reference, tr("参考"))
+
+    def _delete_run(self, run, role: str, confirm: bool = True) -> None:
+        """Delete a run's files behind an explicit confirmation."""
+        if run is None:
+            return
+        paths = self._run_file_paths(run)
+        if not paths:
+            self.status.showMessage(tr("这条跑次没有可删除的文件"))
+            return
+        names = {path.name for path in paths}
+        others = [other for other in self.runs if other.id != run.id]
+        sharing = [other for other in others
+                   if names & set(other.source_files or [])]
+        size_mb = sum(path.stat().st_size for path in paths) / 1048576.0
+        meta = run.meta or {}
+        detail = " · ".join(bit for bit in (
+            str(meta.get("car_model") or ""),
+            str(meta.get("track") or ""),
+        ) if bit)
+        text = tr(
+            "「{label}」的数据文件与另外 {n} 条跑次共用：\n{names}\n"
+            "删除会同时移除它们，且无法恢复。仍要删除吗？"
+        ).format(label=run.label, n=len(sharing),
+                 names="、".join(other.label for other in sharing)) if sharing else tr(
+            "删除「{label}」？\n{detail}\n将删除 {files} 个文件（{size:.0f} MB），无法恢复。"
+        ).format(label=run.label, detail=detail or "—",
+                 files=len(paths), size=size_mb)
+        answer = (
+            QMessageBox.question(
+                self,
+                "ACR Telemetry",
+                text,
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if confirm else QMessageBox.StandardButton.Yes
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        player = getattr(self, "_player", None)
+        if player is not None:
+            try:
+                player.stop()
+            except Exception:  # noqa: BLE001
+                pass
+        removed = 0
+        for path in paths:
+            try:
+                path.unlink(missing_ok=True)
+                removed += 1
+            except Exception as exc:  # noqa: BLE001
+                self.status.showMessage(str(exc))
+        self.runs = [item for item in self.runs if item.id != run.id]
+        if self.loader is not None:
+            self._reload_pending = True
+        else:
+            self.start_loader()
+        self.status.showMessage(
+            tr("已删除{role}跑次「{label}」（{n} 个文件）").format(
+                role=role, label=run.label, n=removed))
 
     def _apply_selection(self) -> None:
         current_id = self.current_combo.currentData()

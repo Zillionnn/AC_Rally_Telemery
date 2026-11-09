@@ -190,6 +190,22 @@ EN = {
         "No other run on this stage yet; the reference is this run",
     "参考不能与当前为同一圈，已自动重选":
         "The reference cannot be the current run; re-matched it",
+    "删当前": "Del current",
+    "删参考": "Del ref",
+    "删除当前跑次：CSV、meta 和视频一起删掉（会先确认）":
+        "Delete the current run: csv, meta and video, after a confirmation",
+    "删除参考跑次：CSV、meta 和视频一起删掉（会先确认）":
+        "Delete the reference run: csv, meta and video, after a confirmation",
+    "这条跑次没有可删除的文件": "This run has no files to delete",
+    "「{label}」的数据文件与另外 {n} 条跑次共用：\n{names}\n"
+    "删除会同时移除它们，且无法恢复。仍要删除吗？":
+        "The files of 「{label}」 are shared with {n} other run(s):\n{names}\n"
+        "Deleting removes them as well and cannot be undone. Delete anyway?",
+    "删除「{label}」？\n{detail}\n将删除 {files} 个文件（{size:.0f} MB），无法恢复。":
+        "Delete 「{label}」?\n{detail}\n"
+        "{files} file(s), {size:.0f} MB - this cannot be undone.",
+    "已删除{role}跑次「{label}」（{n} 个文件）":
+        "Deleted the {role} run 「{label}」 ({n} files)",
     "油门 当前": "Throttle current",
     "刹车 当前": "Brake current",
     "油门 参考": "Throttle ref",
