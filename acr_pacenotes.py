@@ -115,7 +115,10 @@ def display_name(key: str) -> str:
 
 
 def _hint(run) -> str:
-    meta = getattr(run, "meta", {}) or {}
+    return hint_for_meta(getattr(run, "meta", None) or {})
+
+
+def hint_for_meta(meta) -> str:
     values = []
     for key in (
         "track",
@@ -125,7 +128,7 @@ def _hint(run) -> str:
         "track_name",
         "configuration",
     ):
-        value = meta.get(key)
+        value = (meta or {}).get(key)
         if isinstance(value, str):
             values.append(value)
     return " ".join(values).lower()
@@ -159,13 +162,44 @@ def auto_stage(run, book: PaceNoteBook) -> str | None:
     summary = run.summary
     start = float(summary.get("start_distance", 0.0))
     end = float(summary.get("end_distance", start + summary.get("distance", 0.0)))
-    hint = _hint(run)
+    return match_stage(book, start, end, _hint(run))
+
+
+def match_stage(book: PaceNoteBook, start: float, end: float,
+                hint: str = "") -> str | None:
+    """Best pacenote stage for a driven distance range."""
+    if not book.stages:
+        return None
 
     def score(stage: Stage) -> float:
         distance_error = abs(stage.start - start) + abs(stage.end - end)
         return distance_error + _hint_penalty(stage, hint)
 
     return min(book.stages, key=lambda key: score(book.stages[key]))
+
+
+FINISH_TOLERANCE = 300.0
+START_TOLERANCE = 300.0
+
+
+def is_finished(book: PaceNoteBook, start: float, end: float,
+                meta=None) -> bool | None:
+    """Did the drive reach the pacenote finish?
+
+    True/False when the stage is known, None when the driven range does not
+    line up with any pacenote stage (the caller must then keep the data).
+    """
+    if not book.stages:
+        return None
+    key = match_stage(book, start, end, hint_for_meta(meta))
+    stage = book.stages.get(key or "")
+    if stage is None:
+        return None
+    if abs(start - stage.start) > START_TOLERANCE:
+        # The start does not match that stage either: this stage is simply not
+        # in the pacenote table, so there is nothing to judge.
+        return None
+    return end - stage.end >= -FINISH_TOLERANCE
 
 
 def relative_notes(stage: Stage, start_distance: float) -> list[tuple[Note, float]]:

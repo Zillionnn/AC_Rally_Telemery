@@ -805,9 +805,12 @@ class TelemetryWindow(QMainWindow):
         runs=None,
         directory: Path = acr_data.TELEMETRY_DIR,
         auto_record: bool = True,
+        prune: bool = True,
     ):
         super().__init__()
         self.directory = Path(directory)
+        self._prune_enabled = bool(prune)
+        self._pruned = False
         if _LANG_OVERRIDE:
             acr_i18n.set_language(_LANG_OVERRIDE)
         else:
@@ -3315,6 +3318,18 @@ class TelemetryWindow(QMainWindow):
         return current.id
 
     def _on_loaded(self, runs) -> None:
+        if self._prune_enabled and not self._pruned:
+            self._pruned = True
+            try:
+                removed = acr_data.prune_unfinished(self.directory,
+                                                    self.pacenote_book)
+            except Exception:  # noqa: BLE001
+                removed = 0
+            if removed:
+                self.status.showMessage(
+                    tr("已清理 {n} 条未跑完的跑次").format(n=removed))
+                self.start_loader()
+                return
         self.current_combo.setEnabled(True)
         self.reference_combo.setEnabled(True)
         self.refresh_btn.setEnabled(True)
@@ -4239,6 +4254,7 @@ def main() -> int:
             runs=runs,
             directory=args.telemetry_dir,
             auto_record=False,
+            prune=False,
         )
         _apply_indices(window, args.current, args.reference)
         if args.tab is not None:

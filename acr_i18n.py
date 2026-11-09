@@ -190,6 +190,8 @@ EN = {
         "No other run on this stage yet; the reference is this run",
     "参考不能与当前为同一圈，已自动重选":
         "The reference cannot be the current run; re-matched it",
+    "未跑完赛段 · 已丢弃": "Stage not finished · discarded",
+    "已清理 {n} 条未跑完的跑次": "Removed {n} unfinished run(s)",
     "油门 当前": "Throttle current",
     "刹车 当前": "Brake current",
     "油门 参考": "Throttle ref",
