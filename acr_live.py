@@ -10,7 +10,6 @@ from pathlib import Path
 from PySide6.QtCore import QThread, Signal
 
 import acr_data
-import acr_pacenotes
 import acr_telemetry
 from acr_i18n import tr
 
@@ -46,7 +45,6 @@ class AutoRecorder(QThread):
                                "bitrate_mbps": 8.0}
         self._capture_window = None
         self._recorder = None
-        self._pacenote_book = None
 
     def set_auto(self, enabled: bool) -> None:
         self._auto = bool(enabled)
@@ -293,9 +291,6 @@ class AutoRecorder(QThread):
         )
         row = acr_telemetry.make_row(p, g, wall, t_ms, dt_ms)
         record["writer"].writerow(row)
-        if record["rows"] == 0:
-            record["start_dist"] = float(row.get("distance_traveled") or 0.0)
-        record["end_dist"] = float(row.get("distance_traveled") or 0.0)
         record["rows"] += 1
         record["last_stage"] = stage
         if time.perf_counter() - record["last_flush"] >= 1.0:
@@ -373,36 +368,6 @@ class AutoRecorder(QThread):
                 pass
             record["static"] = None
 
-    def _reached_finish(self, record) -> bool:
-        """Did this recording reach the pacenote finish of its stage?
-
-        A missing pacenote table or a stage we cannot match keeps the
-        recording; only a matched stage that clearly never finished is thrown
-        away, so a guess never costs real data.
-        """
-        book = self._pacenote_book
-        if book is None:
-            book = acr_pacenotes.load()
-            self._pacenote_book = book
-        if not book.stages:
-            return True
-        meta = {}
-        try:
-            if record.get("static") is not None:
-                info = acr_telemetry.parse_structure(
-                    acr_telemetry.StaticInfo, record["static"].read()
-                )
-                meta = acr_telemetry.static_metadata(info)
-        except Exception:  # noqa: BLE001
-            meta = {}
-        verdict = acr_pacenotes.is_finished(
-            book,
-            float(record.get("start_dist", 0.0)),
-            float(record.get("end_dist", 0.0)),
-            meta,
-        )
-        return True if verdict is None else bool(verdict)
-
     def _finish(self, reason: str, discard: bool = False, emit: bool = True) -> None:
         record = self._record
         if record is None:
@@ -414,12 +379,6 @@ class AutoRecorder(QThread):
         except Exception:
             pass
         duration = float(record["last_stage"])
-        unfinished = False
-        if not discard and not self._reached_finish(record):
-            # Never finished the stage (left the session, reset, quit): the
-            # csv, its metadata and the video are all discarded.
-            unfinished = True
-            discard = True
         meta = {
             "stage_time": duration,
             "rows": record["rows"],
@@ -441,8 +400,6 @@ class AutoRecorder(QThread):
                 record["path"].with_suffix(".meta.json").unlink(missing_ok=True)
             except Exception:
                 pass
-            if unfinished and emit:
-                self._emit("discarded", tr("未跑完赛段 · 已丢弃"), duration)
             return
         if record.get("video") and not video.get("error"):
             meta.update({
