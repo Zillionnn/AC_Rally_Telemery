@@ -38,6 +38,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QLineEdit,
     QListWidget,
     QListWidgetItem,
     QMainWindow,
@@ -1083,6 +1084,20 @@ class TelemetryWindow(QMainWindow):
         layout.addWidget(self.live_state)
         layout.addWidget(self.live_detail)
         layout.addStretch(1)
+        self.run_filter = QLineEdit()
+        self.run_filter.setPlaceholderText(tr("搜索：赛道 / 车 / 日期"))
+        self.run_filter.setClearButtonEnabled(True)
+        self.run_filter.setMinimumWidth(170)
+        self.run_filter.setMaximumWidth(220)
+        self.run_filter.setToolTip(tr("过滤“当前/参考”下拉框：输入赛道、车型或日期"))
+        self.run_filter.textChanged.connect(self._on_run_filter_changed)
+        layout.addWidget(self.run_filter)
+        self.same_stage_only = QCheckBox(tr("只看当前赛道"))
+        self.same_stage_only.setToolTip(
+            tr("勾选：两个下拉框只列当前跑次所在赛道的记录"))
+        self.same_stage_only.toggled.connect(self._on_same_stage_toggled)
+        layout.addWidget(self.same_stage_only)
+        layout.addSpacing(8)
         self.auto_check = QCheckBox(tr("自动录制"))
         self.auto_check.setChecked(True)
         self.auto_check.stateChanged.connect(self._on_auto_toggle)
@@ -3404,7 +3419,12 @@ class TelemetryWindow(QMainWindow):
         print(error, file=sys.stderr)
 
     @staticmethod
-    def _run_display(run) -> tuple[str, str]:
+    def _run_track(run) -> str:
+        meta = (run.meta if run is not None else None) or {}
+        return str(meta.get("track") or "").strip()
+
+    @classmethod
+    def _run_display(cls, run, include_track: bool = True) -> tuple[str, str]:
         """Combo text and tooltip for a run: which car, which stage, which lap."""
         meta = (run.meta if run is not None else None) or {}
         car = str(meta.get("car_model") or "").strip()
@@ -3414,7 +3434,7 @@ class TelemetryWindow(QMainWindow):
         parts = [str(run.label)]
         if car:
             parts.append(car)
-        if stage:
+        if stage and include_track:
             parts.append(stage)
         text = " · ".join(parts)
         distance = float(run.summary.get("distance", 0.0) or 0.0)
@@ -3428,6 +3448,93 @@ class TelemetryWindow(QMainWindow):
             ) if bit
         )
         return text, tooltip
+
+    def _matching_runs(self, current_run=None, keep_ids=()) -> list:
+        """Runs that pass the search box and the same-stage filter, newest
+        first inside their track.  Runs that are currently selected stay in
+        the list so the pickers never lose their selection."""
+        query = self.run_filter.text().strip().lower() if getattr(
+            self, "run_filter", None) is not None else ""
+        same_only = bool(getattr(self, "same_stage_only", None) is not None
+                         and self.same_stage_only.isChecked())
+        current_run = current_run if current_run is not None else self.current
+        keep = {run_id for run_id in keep_ids if run_id}
+        out = []
+        for run in self.runs:
+            if (same_only and current_run is not None
+                    and not self._same_track(current_run, run)
+                    and run.id not in keep):
+                continue
+            if query and run.id not in keep:
+                haystack = " ".join((
+                    str(run.label),
+                    str((run.meta or {}).get("car_model") or ""),
+                    self._run_track(run),
+                    " ".join(run.source_files or []),
+                )).lower()
+                if query not in haystack:
+                    continue
+            out.append(run)
+        return out
+
+    @classmethod
+    def _run_groups(cls, runs) -> list[tuple[str, list]]:
+        """Track groups, each newest-first, ordered by their newest run."""
+        groups: dict[str, list] = {}
+        for run in runs:
+            groups.setdefault(cls._run_track(run), []).append(run)
+        ordered = []
+        for track, items in groups.items():
+            items.sort(key=cls._run_stamp, reverse=True)
+            ordered.append((track, items))
+        ordered.sort(key=lambda pair: cls._run_stamp(pair[1][0]), reverse=True)
+        return ordered
+
+    def _fill_combo(self, combo, runs, selected_id=None) -> None:
+        """Fill a picker with track headers and the runs under them."""
+        combo.blockSignals(True)
+        combo.clear()
+        model = combo.model()
+        for track, items in self._run_groups(runs):
+            title = track or tr("未知赛道")
+            combo.addItem(f"— {title} · {len(items)} —")
+            header = model.item(combo.count() - 1)
+            if header is not None:
+                header.setSelectable(False)
+                header.setEnabled(False)
+                header.setData(None, Qt.ItemDataRole.UserRole)
+                header.setForeground(QBrush(QColor(C["muted"])))
+            for run in items:
+                text, tooltip = self._run_display(run, include_track=False)
+                combo.addItem(text, run.id)
+                index = combo.count() - 1
+                combo.setItemData(index, tooltip, Qt.ItemDataRole.ToolTipRole)
+        if selected_id:
+            index = combo.findData(selected_id)
+            if index >= 0:
+                combo.setCurrentIndex(index)
+        combo.blockSignals(False)
+
+    def _rebuild_combos(self, current_id=None, reference_id=None) -> None:
+        """Rebuild both pickers from the current filter state."""
+        if not self.runs or getattr(self, "_updating", False):
+            return
+        current_id = current_id or self.current_combo.currentData()
+        reference_id = reference_id or self.reference_combo.currentData()
+        current_run = next(
+            (run for run in self.runs if run.id == current_id), None)
+        runs = self._matching_runs(current_run, {current_id, reference_id})
+        self._updating = True
+        self._fill_combo(self.current_combo, runs, current_id)
+        self._fill_combo(self.reference_combo, runs, reference_id)
+        self._updating = False
+
+    def _on_run_filter_changed(self, _text: str) -> None:
+        self._rebuild_combos()
+
+    def _on_same_stage_toggled(self, _checked: bool) -> None:
+        self._rebuild_combos()
+
 
     def set_runs(self, runs, current_id=None, reference_id=None) -> None:
         self.runs = list(runs)
@@ -3467,21 +3574,12 @@ class TelemetryWindow(QMainWindow):
                 else current_id
             )
 
+        current_run = next(
+            (run for run in self.runs if run.id == current_id), None)
+        listed = self._matching_runs(current_run, {current_id, reference_id})
         self._updating = True
-        self.current_combo.blockSignals(True)
-        self.reference_combo.blockSignals(True)
-        self.current_combo.clear()
-        self.reference_combo.clear()
-        for run in self.runs:
-            text, tooltip = self._run_display(run)
-            for combo in (self.current_combo, self.reference_combo):
-                combo.addItem(text, run.id)
-                index = combo.count() - 1
-                combo.setItemData(index, tooltip, Qt.ItemDataRole.ToolTipRole)
-        self.current_combo.setCurrentIndex(self.current_combo.findData(current_id))
-        self.reference_combo.setCurrentIndex(self.reference_combo.findData(reference_id))
-        self.current_combo.blockSignals(False)
-        self.reference_combo.blockSignals(False)
+        self._fill_combo(self.current_combo, listed, current_id)
+        self._fill_combo(self.reference_combo, listed, reference_id)
         self._updating = False
         self._apply_selection()
         if reference_id == current_id and len(self.runs) > 1:
@@ -3529,19 +3627,22 @@ class TelemetryWindow(QMainWindow):
              if run.id == self.current_combo.currentData()), None)
         if current is None:
             return
+        self.current = current
         hint = ""
+        reference_id = self.reference_combo.currentData()
         if self._ref_auto:
             reference_id = self._auto_reference_id(current)
             if reference_id == current.id:
                 hint = tr("该赛道暂无其它记录，参考暂为当前圈")
-            self._set_reference_id(reference_id)
-        elif self.reference_combo.currentData() == current.id:
+        elif reference_id == current.id:
             # A pinned reference that just became the current run would
             # compare a run with itself; drop the pin and match again.
             self._set_ref_auto(True)
             reference_id = self._auto_reference_id(current)
-            self._set_reference_id(reference_id)
             hint = tr("参考不能与当前为同一圈，已自动重选")
+        # The same-stage filter depends on the current run, so both pickers
+        # have to be rebuilt before the selection can be applied.
+        self._rebuild_combos(current.id, reference_id)
         self._apply_selection()
         if hint:
             self.status.showMessage(hint)
@@ -3559,9 +3660,9 @@ class TelemetryWindow(QMainWindow):
         if not checked or current is None:
             return
         reference_id = self._auto_reference_id(current)
-        self._set_reference_id(reference_id)
         hint = (tr("该赛道暂无其它记录，参考暂为当前圈")
                 if reference_id == current.id else "")
+        self._rebuild_combos(current.id, reference_id)
         self._apply_selection()
         if hint:
             self.status.showMessage(hint)
@@ -4365,10 +4466,20 @@ def main() -> int:
 
 
 def _apply_indices(window: TelemetryWindow, current: int | None, reference: int | None) -> None:
-    if current is not None and 0 <= current < window.current_combo.count():
-        window.current_combo.setCurrentIndex(current)
-    if reference is not None and 0 <= reference < window.reference_combo.count():
-        window.reference_combo.setCurrentIndex(reference)
+    """Select runs by their index in window.runs.
+
+    The pickers group runs under track headers now, so a combo index and a run
+    index are no longer the same thing.
+    """
+    def select(combo, index: int | None) -> None:
+        if index is None or not (0 <= index < len(window.runs)):
+            return
+        target = combo.findData(window.runs[index].id)
+        if target >= 0:
+            combo.setCurrentIndex(target)
+
+    select(window.current_combo, current)
+    select(window.reference_combo, reference)
 
 
 if __name__ == "__main__":

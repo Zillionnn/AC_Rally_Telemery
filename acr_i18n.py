@@ -206,6 +206,13 @@ EN = {
         "{files} file(s), {size:.0f} MB - this cannot be undone.",
     "已删除{role}跑次「{label}」（{n} 个文件）":
         "Deleted the {role} run 「{label}」 ({n} files)",
+    "搜索：赛道 / 车 / 日期": "Search: stage / car / date",
+    "过滤“当前/参考”下拉框：输入赛道、车型或日期":
+        "Filters the Current/Reference pickers: type a stage, car or date",
+    "只看当前赛道": "Current stage only",
+    "勾选：两个下拉框只列当前跑次所在赛道的记录":
+        "Checked: both pickers only list runs of the current stage",
+    "未知赛道": "Unknown stage",
     "油门 当前": "Throttle current",
     "刹车 当前": "Brake current",
     "油门 参考": "Throttle ref",
